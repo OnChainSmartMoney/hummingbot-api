@@ -34,7 +34,6 @@ install:
 	else \
 	    conda env create -f environment.yml; \
 	fi
-	conda activate hummingbot-api
 	$(MAKE) install-pre-commit
 
 install-pre-commit:

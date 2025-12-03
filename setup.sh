@@ -186,7 +186,7 @@ echo -e "${GREEN}🐳 Starting services (API, EMQX, PostgreSQL)...${NC}"
 
 # Start all services (MCP and Dashboard are optional - see docker-compose.yml)
 docker compose up -d &
-docker pull hummingbot/hummingbot:latest &
+# docker pull hummingbot/hummingbot:latest &
 
 # Wait for both operations to complete
 wait

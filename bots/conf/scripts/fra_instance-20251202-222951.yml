@@ -1,0 +1,5 @@
+candles_config: []
+controllers_config:
+- conf_funding_rate_arb_controller.yml
+markets: {}
+script_file_name: v2_with_controllers.py
