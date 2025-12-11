@@ -221,7 +221,7 @@ if [ "$DB_READY" = true ]; then
     echo -e "${YELLOW}🔍 Verifying database configuration...${NC}"
 
     # Check if hbot user exists
-    USER_EXISTS=$(docker exec hummingbot-postgres psql -U hbot -tAc "SELECT 1 FROM pg_roles WHERE rolname='hbot'" 2>/dev/null)
+    USER_EXISTS=$(docker exec hummingbot-postgres psql -U hbot -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='hbot'" 2>/dev/null)
 
     # Check if database exists
     DB_EXISTS=$(docker exec hummingbot-postgres psql -U hbot -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='hummingbot_api'" 2>/dev/null)

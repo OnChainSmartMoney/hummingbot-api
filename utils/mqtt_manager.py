@@ -33,7 +33,7 @@ class MQTTManager:
 
         # Auto-discovered bots
         self._discovered_bots: Dict[str, float] = {}  # bot_id: last_seen_timestamp
-        
+
         # Message deduplication tracking
         self._processed_messages: Dict[str, float] = {}  # message_hash: timestamp
         self._message_ttl = 300  # 5 minutes TTL for processed messages
@@ -45,7 +45,9 @@ class MQTTManager:
         self._tasks: Set[asyncio.Task] = set()
 
         # RPC response tracking
-        self._pending_responses: Dict[str, asyncio.Future] = {}  # reply_to_topic: future
+        self._pending_responses: Dict[
+            str, asyncio.Future
+        ] = {}  # reply_to_topic: future
 
         # Subscriptions to restore on reconnect
         self._subscriptions = [
@@ -56,6 +58,7 @@ class MQTTManager:
             ("hbot/+/hb", 1),  # Heartbeats
             ("hbot/+/performance", 1),  # Performance metrics
             ("hbot/+/external/event/+", 1),  # External events
+            ("hbot/+/executors/events", 1),  # Command responses
             ("hummingbot-api/response/+", 1),  # RPC responses to our reply_to topics
         ]
 
@@ -80,7 +83,9 @@ class MQTTManager:
                 keepalive=60,
             )
         else:
-            client = aiomqtt.Client(hostname=self.host, port=self.port, identifier=client_id, keepalive=60)
+            client = aiomqtt.Client(
+                hostname=self.host, port=self.port, identifier=client_id, keepalive=60
+            )
 
         async with client:
             self._connected = True
@@ -90,7 +95,7 @@ class MQTTManager:
             for topic, qos in self._subscriptions:
                 await client.subscribe(topic, qos=qos)
             yield client
-            
+
         # Cleanup on exit
         self._connected = False
 
@@ -103,10 +108,14 @@ class MQTTManager:
                     async for message in client.messages:
                         await self._process_message(message)
             except aiomqtt.MqttError as error:
-                logger.error(f'MQTT disconnected during message iteration: "{error}". Reconnecting...')
+                logger.error(
+                    f'MQTT disconnected during message iteration: "{error}". Reconnecting...'
+                )
                 await asyncio.sleep(self._reconnect_interval)
             except Exception as e:
-                logger.error(f"Unexpected error in message handler: {e}. Reconnecting...")
+                logger.error(
+                    f"Unexpected error in message handler: {e}. Reconnecting..."
+                )
                 await asyncio.sleep(self._reconnect_interval)
 
     async def _process_message(self, message):
@@ -123,7 +132,11 @@ class MQTTManager:
 
             # Check if this matches namespace/instance_id/channel pattern
             if len(topic_parts) >= 3:
-                namespace, bot_id, channel = topic_parts[0], topic_parts[1], "/".join(topic_parts[2:])
+                namespace, bot_id, channel = (
+                    topic_parts[0],
+                    topic_parts[1],
+                    "/".join(topic_parts[2:]),
+                )
                 # Only process if it's the expected namespace
                 if namespace == "hbot":
                     # Auto-discover bot
@@ -145,15 +158,25 @@ class MQTTManager:
                         await self._handle_heartbeat(bot_id, data)
                     elif channel == "events":
                         await self._handle_events(bot_id, data)
+                    elif channel == "executors/events":
+                        await self._handle_events(bot_id, data)
                     elif channel == "performance":
                         await self._handle_performance(bot_id, data)
                     elif channel.startswith("response/"):
                         await self._handle_command_response(bot_id, channel, data)
                     elif channel.startswith("external/event/"):
                         await self._handle_external_event(bot_id, channel, data)
-                    elif channel in ["history", "start", "stop", "config", "import_strategy"]:
+                    elif channel in [
+                        "history",
+                        "start",
+                        "stop",
+                        "config",
+                        "import_strategy",
+                    ]:
                         # These are command channels - responses should come on response/* topics
-                        logger.debug(f"Command channel '{channel}' for bot {bot_id} - waiting for response")
+                        logger.debug(
+                            f"Command channel '{channel}' for bot {bot_id} - waiting for response"
+                        )
                     else:
                         logger.info(f"Unknown channel '{channel}' for bot {bot_id}")
 
@@ -164,9 +187,13 @@ class MQTTManager:
                                 await handler(bot_id, channel, data)
                             else:
                                 # Run sync handler in executor
-                                await asyncio.get_event_loop().run_in_executor(None, handler, bot_id, channel, data)
+                                await asyncio.get_event_loop().run_in_executor(
+                                    None, handler, bot_id, channel, data
+                                )
         except Exception as e:
-            logger.error(f"Error processing message from {message.topic}: {e}", exc_info=True)
+            logger.error(
+                f"Error processing message from {message.topic}: {e}", exc_info=True
+            )
 
     def _match_topic(self, pattern: str, topic: str) -> bool:
         """Check if topic matches pattern (supports + wildcard)."""
@@ -193,17 +220,21 @@ class MQTTManager:
         """Handle log messages with deduplication."""
         # Create a unique message identifier for deduplication
         if isinstance(data, dict):
-            level = data.get("level_name") or data.get("levelname") or data.get("level", "INFO")
+            level = (
+                data.get("level_name")
+                or data.get("levelname")
+                or data.get("level", "INFO")
+            )
             message = data.get("msg") or data.get("message", "")
             timestamp = data.get("timestamp") or data.get("time") or time.time()
-            
+
             # Create hash for deduplication (bot_id + message + timestamp within 1 second)
             message_hash = f"{bot_id}:{message}:{int(timestamp)}"
         elif isinstance(data, str):
             message = data
             timestamp = time.time()
             level = "INFO"
-            
+
             # Create hash for string messages
             message_hash = f"{bot_id}:{message}:{int(timestamp)}"
         else:
@@ -213,11 +244,17 @@ class MQTTManager:
         current_time = time.time()
         if message_hash in self._processed_messages:
             # Skip duplicate message
-            logger.debug(f"Skipping duplicate log message from {bot_id}: {message[:50]}...")
+            logger.debug(
+                f"Skipping duplicate log message from {bot_id}: {message[:50]}..."
+            )
             return
 
         # Clean up old message hashes (older than TTL)
-        expired_hashes = [h for h, t in self._processed_messages.items() if current_time - t > self._message_ttl]
+        expired_hashes = [
+            h
+            for h, t in self._processed_messages.items()
+            if current_time - t > self._message_ttl
+        ]
         for h in expired_hashes:
             del self._processed_messages[h]
 
@@ -261,7 +298,6 @@ class MQTTManager:
 
     async def _handle_external_event(self, bot_id: str, channel: str, data: Any):
         """Handle external events."""
-        event_type = channel.split("/")[-1]
 
     async def _handle_rpc_response(self, topic: str, message):
         """Handle RPC responses on hummingbot-api/response/* topics."""
@@ -286,9 +322,6 @@ class MQTTManager:
     async def _handle_command_response(self, bot_id: str, channel: str, data: Any):
         """Handle command responses (legacy - keeping for backward compatibility)."""
         # Extract command from response channel (e.g., response/start/1234567890 or response/history)
-        channel_parts = channel.split("/")
-        if len(channel_parts) >= 2:
-            command = channel_parts[1]
 
     async def start(self):
         """Start the MQTT client."""
@@ -326,7 +359,12 @@ class MQTTManager:
         logger.info("MQTT client stopped")
 
     async def publish_command_and_wait(
-        self, bot_id: str, command: str, data: Dict[str, Any], timeout: float = 30.0, qos: int = 1
+        self,
+        bot_id: str,
+        command: str,
+        data: Dict[str, Any],
+        timeout: float = 30.0,
+        qos: int = 1,
     ) -> Optional[Any]:
         """
         Publish a command to a bot and wait for the response.
@@ -352,7 +390,9 @@ class MQTTManager:
 
         try:
             # Send the command with custom reply_to
-            success = await self._publish_command_with_reply_to(bot_id, command, data, reply_to_topic, qos)
+            success = await self._publish_command_with_reply_to(
+                bot_id, command, data, reply_to_topic, qos
+            )
             if not success:
                 self._pending_responses.pop(reply_to_topic, None)
                 return None
@@ -362,7 +402,9 @@ class MQTTManager:
                 response = await asyncio.wait_for(future, timeout=timeout)
                 return response
             except asyncio.TimeoutError:
-                logger.warning(f"⏰ Timeout waiting for response from {bot_id} for command '{command}' on {reply_to_topic}")
+                logger.warning(
+                    f"⏰ Timeout waiting for response from {bot_id} for command '{command}' on {reply_to_topic}"
+                )
                 self._pending_responses.pop(reply_to_topic, None)
                 return None
 
@@ -372,7 +414,12 @@ class MQTTManager:
             return None
 
     async def _publish_command_with_reply_to(
-        self, bot_id: str, command: str, data: Dict[str, Any], reply_to: str, qos: int = 1
+        self,
+        bot_id: str,
+        command: str,
+        data: Dict[str, Any],
+        reply_to: str,
+        qos: int = 1,
     ) -> bool:
         """
         Publish a command to a bot with custom reply_to topic.
@@ -414,7 +461,9 @@ class MQTTManager:
             logger.error(f"Failed to publish command to {bot_id}: {e}")
             return False
 
-    async def publish_command(self, bot_id: str, command: str, data: Dict[str, Any], qos: int = 1) -> bool:
+    async def publish_command(
+        self, bot_id: str, command: str, data: Dict[str, Any], qos: int = 1
+    ) -> bool:
         """
         Publish a command to a bot using proper RPCMessage Request format.
 
@@ -504,7 +553,9 @@ class MQTTManager:
         """
         current_time = time.time()
         active_bots = [
-            bot_id for bot_id, last_seen in self._discovered_bots.items() if current_time - last_seen < timeout_seconds
+            bot_id
+            for bot_id, last_seen in self._discovered_bots.items()
+            if current_time - last_seen < timeout_seconds
         ]
         return active_bots
 
@@ -532,7 +583,9 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     async def main():
-        mqtt_manager = MQTTManager(host="localhost", port=1883, username="", password="")
+        mqtt_manager = MQTTManager(
+            host="localhost", port=1883, username="", password=""
+        )
 
         await mqtt_manager.start()
 

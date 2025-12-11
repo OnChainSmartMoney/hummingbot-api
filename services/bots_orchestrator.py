@@ -1,7 +1,7 @@
 import asyncio
 import logging
-from typing import Optional
 import re
+from typing import Any, Dict, Optional
 
 import docker
 
@@ -27,12 +27,17 @@ class BotsOrchestrator:
         self.docker_client = docker.from_env()
 
         # Initialize MQTT manager
-        self.mqtt_manager = MQTTManager(host=broker_host, port=broker_port, username=broker_username, password=broker_password)
+        self.mqtt_manager = MQTTManager(
+            host=broker_host,
+            port=broker_port,
+            username=broker_username,
+            password=broker_password,
+        )
 
         # Active bots tracking
         self.active_bots = {}
         self._update_bots_task: Optional[asyncio.Task] = None
-        
+
         # Track bots that are currently being stopped and archived
         self.stopping_bots = set()
 
@@ -43,8 +48,12 @@ class BotsOrchestrator:
         """Filter for Hummingbot containers based on image name pattern."""
         try:
             # Get the image name (first tag if available, otherwise the image ID)
-            image_name = container.image.tags[0] if container.image.tags else str(container.image)
-            pattern = r'.+/hummingbot:'
+            image_name = (
+                container.image.tags[0]
+                if container.image.tags
+                else str(container.image)
+            )
+            pattern = r".+/hummingbot:"
             return bool(re.match(pattern, image_name))
         except Exception:
             return False
@@ -57,12 +66,14 @@ class BotsOrchestrator:
         return [
             container.name
             for container in self.docker_client.containers.list()
-            if container.status == "running" and self.hummingbot_containers_fiter(container)
+            if container.status == "running"
+            and self.hummingbot_containers_fiter(container)
         ]
 
     def start(self):
         """Start the loop that monitors active bots."""
         # Start MQTT manager and update loop in async context
+        print("Starting BotsOrchestrator...")
         self._update_bots_task = asyncio.create_task(self._start_async())
 
     async def _start_async(self):
@@ -90,10 +101,18 @@ class BotsOrchestrator:
                 docker_bots = await self.get_active_containers()
 
                 # Get bots from MQTT messages (auto-discovered)
-                mqtt_bots = self.mqtt_manager.get_discovered_bots(timeout_seconds=30)  # 30 second timeout
+                mqtt_bots = self.mqtt_manager.get_discovered_bots(
+                    timeout_seconds=30
+                )  # 30 second timeout
 
                 # Combine both sources
-                all_active_bots = set([bot for bot in docker_bots + mqtt_bots if not self.is_bot_stopping(bot)])
+                all_active_bots = set(
+                    [
+                        bot
+                        for bot in docker_bots + mqtt_bots
+                        if not self.is_bot_stopping(bot)
+                    ]
+                )
 
                 # Remove bots that are no longer active
                 for bot_name in list(self.active_bots):
@@ -173,7 +192,9 @@ class BotsOrchestrator:
 
         # Create ImportCommandMessage.Request format
         data = {"strategy": strategy}
-        success = await self.mqtt_manager.publish_command(bot_name, "import_strategy", data)
+        success = await self.mqtt_manager.publish_command(
+            bot_name, "import_strategy", data
+        )
         return {"success": success}
 
     async def configure_bot(self, bot_name, params, **kwargs):
@@ -209,7 +230,9 @@ class BotsOrchestrator:
 
         # Use the new RPC method to wait for response
         timeout = kwargs.get("timeout", 30.0)  # Default 30 second timeout
-        response = await self.mqtt_manager.publish_command_and_wait(bot_name, "history", data, timeout=timeout)
+        response = await self.mqtt_manager.publish_command_and_wait(
+            bot_name, "history", data, timeout=timeout
+        )
 
         if response is None:
             return {
@@ -226,8 +249,15 @@ class BotsOrchestrator:
         for controller, performance in controllers_performance.items():
             try:
                 # Check if all the metrics are numeric
-                _ = sum(metric for key, metric in performance.items() if key not in ("positions_summary", "close_type_counts"))
-                cleaned_performance[controller] = {"status": "running", "performance": performance}
+                _ = sum(
+                    metric
+                    for key, metric in performance.items()
+                    if key not in ("positions_summary", "close_type_counts")
+                )
+                cleaned_performance[controller] = {
+                    "status": "running",
+                    "performance": performance,
+                }
             except Exception as e:
                 cleaned_performance[controller] = {
                     "status": "error",
@@ -263,7 +293,7 @@ class BotsOrchestrator:
                     "general_logs": [],
                     "recently_active": False,
                 }
-            
+
             # Get data from MQTT manager
             controllers_performance = self.mqtt_manager.get_bot_performance(bot_name)
             performance = self.determine_controller_performance(controllers_performance)
@@ -291,18 +321,59 @@ class BotsOrchestrator:
             }
         except Exception as e:
             return {"status": "error", "error": str(e)}
-    
+
     def set_bot_stopping(self, bot_name: str):
         """Mark a bot as currently being stopped and archived."""
         self.stopping_bots.add(bot_name)
         logger.info(f"Marked bot {bot_name} as stopping")
-    
+
     def clear_bot_stopping(self, bot_name: str):
         """Clear the stopping status for a bot."""
         self.stopping_bots.discard(bot_name)
         logger.info(f"Cleared stopping status for bot {bot_name}")
-    
+
     def is_bot_stopping(self, bot_name: str) -> bool:
         """Check if a bot is currently being stopped."""
         return bot_name in self.stopping_bots
-    
+
+    async def send_custom_command(
+        self, bot_name: str, params: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Send a custom command to a specific bot over MQTT.
+
+        'command' must be understood by the bot's MQTT command handler.
+        This is a thin wrapper over MQTTManager.publish_command().
+        """
+        if bot_name not in self.active_bots:
+            logger.warning("Bot %s not found in active bots", bot_name)
+            return {"success": False, "message": f"Bot {bot_name} not found"}
+
+        if params is None:
+            params = {}
+
+        logger.info(
+            "Sending custom command to bot=%s payload=%s",
+            bot_name,
+            params,
+        )
+
+        try:
+            success = await self.mqtt_manager.publish_command(
+                bot_id=bot_name, command="custom_command", data=params
+            )
+            logger.info(
+                "Custom command to bot=%s success=%s",
+                bot_name,
+                bot_name,
+                success,
+            )
+            return {"success": success}
+        except Exception as e:
+            logger.error(
+                "Error sending custom command to bot=%s: %s",
+                bot_name,
+                e,
+                exc_info=True,
+            )
+            return {"success": False, "message": str(e)}
