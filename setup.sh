@@ -1,167 +1,45 @@
 #!/bin/bash
+# Hummingbot API Setup - Creates .env with sensible defaults
 
-# Backend API Setup Script
-# This script creates a comprehensive .env file with all configuration options
-# following the Pydantic Settings structure established in config.py
+set -e
 
-set -e  # Exit on any error
-
-# Colors for better output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-
-echo "🚀 Backend API Setup"
+echo "Hummingbot API Setup"
 echo ""
 
-echo -n "Config password [default: admin]: "
-read CONFIG_PASSWORD
-CONFIG_PASSWORD=${CONFIG_PASSWORD:-admin}
-
-echo -n "API username [default: admin]: "
-read USERNAME
-USERNAME=${USERNAME:-admin}
-
-echo -n "API password [default: admin]: "
-read PASSWORD
+# Only prompt for password (most common customization)
+read -p "API password [default: admin]: " PASSWORD
 PASSWORD=${PASSWORD:-admin}
 
-echo ""
-echo -e "${YELLOW}Optional Services${NC}"
-echo -n "Enable Dashboard web interface? (y/n) [default: n]: "
-read ENABLE_DASHBOARD
-ENABLE_DASHBOARD=${ENABLE_DASHBOARD:-n}
+read -p "Config password [default: admin]: " CONFIG_PASSWORD
+CONFIG_PASSWORD=${CONFIG_PASSWORD:-admin}
 
-echo ""
-echo -e "${YELLOW}Gateway Configuration (Optional)${NC}"
-echo -n "Gateway passphrase [default: admin, press Enter to skip]: "
-read GATEWAY_PASSPHRASE
-GATEWAY_PASSPHRASE=${GATEWAY_PASSPHRASE:-admin}
-
-# Set paths and defaults
-BOTS_PATH=$(pwd)
-
-# Use sensible defaults for everything else
-DEBUG_MODE="false"
-BROKER_HOST="localhost"
-BROKER_PORT="1883"
-BROKER_USERNAME="admin"
-BROKER_PASSWORD="password"
-DATABASE_URL="postgresql+asyncpg://hbot:hummingbot-api@localhost:5432/hummingbot_api"
-CLEANUP_INTERVAL="300"
-FEED_TIMEOUT="600"
-AWS_API_KEY=""
-AWS_SECRET_KEY=""
-S3_BUCKET=""
-LOGFIRE_ENV="dev"
-BANNED_TOKENS='["NAV","ARS","ETHW","ETHF","NEWT"]'
-
-echo ""
-echo -e "${GREEN}✅ Using sensible defaults for MQTT, Database, and other settings${NC}"
-
-echo ""
-echo -e "${GREEN}📝 Creating .env file...${NC}"
-
-# Create .env file with proper structure and comments
+# Create .env with sensible defaults
 cat > .env << EOF
-# =================================================================
-# Backend API Environment Configuration
-# Generated on: $(date)
-# =================================================================
-
-# =================================================================
-# 🔐 Security Configuration
-# =================================================================
-USERNAME=$USERNAME
+# Hummingbot API Configuration
+USERNAME=admin
 PASSWORD=$PASSWORD
-DEBUG_MODE=$DEBUG_MODE
 CONFIG_PASSWORD=$CONFIG_PASSWORD
+DEBUG_MODE=false
 
-# =================================================================
-# 🔗 MQTT Broker Configuration (BROKER_*)
-# =================================================================
-BROKER_HOST=$BROKER_HOST
-BROKER_PORT=$BROKER_PORT
-BROKER_USERNAME=$BROKER_USERNAME
-BROKER_PASSWORD=$BROKER_PASSWORD
+# MQTT Broker
+BROKER_HOST=localhost
+BROKER_PORT=1883
+BROKER_USERNAME=admin
+BROKER_PASSWORD=password
 
-# =================================================================
-# 💾 Database Configuration (DATABASE_*)
-# =================================================================
-DATABASE_URL=$DATABASE_URL
+# Database (auto-configured by docker-compose)
+DATABASE_URL=postgresql+asyncpg://hbot:hummingbot-api@localhost:5432/hummingbot_api
 
-# =================================================================
-# 📊 Market Data Feed Manager Configuration (MARKET_DATA_*)
-# =================================================================
-MARKET_DATA_CLEANUP_INTERVAL=$CLEANUP_INTERVAL
-MARKET_DATA_FEED_TIMEOUT=$FEED_TIMEOUT
-
-# =================================================================
-# ☁️ AWS Configuration (AWS_*) - Optional
-# =================================================================
-AWS_API_KEY=$AWS_API_KEY
-AWS_SECRET_KEY=$AWS_SECRET_KEY
-AWS_S3_DEFAULT_BUCKET_NAME=$S3_BUCKET
-
-# =================================================================
-# ⚙️ Application Settings
-# =================================================================
-LOGFIRE_ENVIRONMENT=$LOGFIRE_ENV
-BANNED_TOKENS=$BANNED_TOKENS
-
-# =================================================================
-# 🌐 Gateway Configuration (GATEWAY_*) - Optional
-# =================================================================
-GATEWAY_PASSPHRASE=$GATEWAY_PASSPHRASE
+# Gateway (optional)
 GATEWAY_URL=http://localhost:15888
+GATEWAY_PASSPHRASE=admin
 
-# =================================================================
-# 📁 Legacy Settings (maintained for backward compatibility)
-# =================================================================
-BOTS_PATH=$BOTS_PATH
-
+# Paths
+BOTS_PATH=$(pwd)
 EOF
 
-echo -e "${GREEN}✅ .env file created successfully!${NC}"
 echo ""
-
-
-# Enable Dashboard if requested
-if [[ "$ENABLE_DASHBOARD" =~ ^[Yy]$ ]]; then
-    echo -e "${GREEN}📊 Enabling Dashboard in docker-compose.yml...${NC}"
-
-    # Remove the comment line first
-    sed -i.bak '/^  # Uncomment to enable Dashboard (optional web interface)/d' docker-compose.yml
-
-    # Uncomment the dashboard service lines
-    sed -i.bak '/^  # dashboard:/,/^  #       - emqx-bridge$/s/^  # /  /' docker-compose.yml
-
-    # Remove backup file
-    rm -f docker-compose.yml.bak
-
-    echo -e "${GREEN}✅ Dashboard enabled!${NC}"
-    echo ""
-fi
-
-# Display configuration summary
-echo -e "${BLUE}📋 Configuration Summary${NC}"
-echo "======================="
-echo -e "${CYAN}Security:${NC} Username: $USERNAME, Debug: $DEBUG_MODE"
-echo -e "${CYAN}Broker:${NC} $BROKER_HOST:$BROKER_PORT"
-echo -e "${CYAN}Database:${NC} ${DATABASE_URL%%@*}@[hidden]"
-echo -e "${CYAN}Market Data:${NC} Cleanup: ${CLEANUP_INTERVAL}s, Timeout: ${FEED_TIMEOUT}s"
-echo -e "${CYAN}Environment:${NC} $LOGFIRE_ENV"
-
-if [ -n "$AWS_API_KEY" ]; then
-    echo -e "${CYAN}AWS:${NC} Configured with S3 bucket: $S3_BUCKET"
-else
-    echo -e "${CYAN}AWS:${NC} Not configured (optional)"
-fi
-
+echo ".env created successfully!"
 echo ""
 echo -e "${GREEN}🎉 Setup Complete!${NC}"
 echo ""

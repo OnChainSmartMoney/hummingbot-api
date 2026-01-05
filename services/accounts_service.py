@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional
@@ -40,9 +39,8 @@ class AccountsService:
     }
     potential_wrapped_tokens = ["ETH", "SOL", "BNB", "POL", "AVAX", "FTM", "ONE", "GLMR", "MOVR"]
     
-    # Cache for storing last successful prices by trading pair with timestamps
+    # Cache for storing last successful prices by trading pair
     _last_known_prices = {}
-    _price_update_interval = 60  # Update prices every 60 seconds
 
     def __init__(self,
                  account_update_interval: int = 5,
@@ -195,17 +193,26 @@ class AccountsService:
             # Re-raise the exception since we no longer have a fallback
             raise
 
-    async def load_account_state_history(self, 
+    async def load_account_state_history(self,
                                         limit: Optional[int] = None,
                                         cursor: Optional[str] = None,
                                         start_time: Optional[datetime] = None,
-                                        end_time: Optional[datetime] = None):
+                                        end_time: Optional[datetime] = None,
+                                        interval: str = "5m"):
         """
-        Load the account state history from the database with pagination.
+        Load the account state history from the database with pagination and interval sampling.
+
+        Args:
+            limit: Maximum number of records to return
+            cursor: Cursor for pagination
+            start_time: Start time filter
+            end_time: End time filter
+            interval: Sampling interval (5m, 15m, 30m, 1h, 4h, 12h, 1d)
+
         :return: Tuple of (data, next_cursor, has_more).
         """
         await self.ensure_db_initialized()
-        
+
         try:
             async with self.db_manager.get_session_context() as session:
                 repository = AccountRepository(session)
@@ -213,7 +220,8 @@ class AccountsService:
                     limit=limit,
                     cursor=cursor,
                     start_time=start_time,
-                    end_time=end_time
+                    end_time=end_time,
+                    interval=interval
                 )
         except Exception as e:
             logger.error(f"Error loading account state history from database: {e}")
@@ -289,23 +297,61 @@ class AccountsService:
         except Exception as e:
             logger.error(f"Error initializing price tracking for {connector_name} in account {account_name}: {e}")
 
-    async def update_account_state(self):
-        """Update account state for all connectors and Gateway wallets."""
+    async def update_account_state(
+        self,
+        skip_gateway: bool = False,
+        account_names: Optional[List[str]] = None,
+        connector_names: Optional[List[str]] = None
+    ):
+        """Update account state for filtered connectors and optionally Gateway wallets.
+
+        Args:
+            skip_gateway: If True, skip Gateway wallet balance updates for faster CEX-only queries.
+            account_names: If provided, only update these accounts. If None, update all accounts.
+            connector_names: If provided, only update these connectors. If None, update all connectors.
+                            For Gateway, this filters by chain-network (e.g., 'solana-mainnet-beta').
+        """
         all_connectors = self.connector_manager.get_all_connectors()
 
+        # Prepare parallel tasks
+        tasks = []
+        task_meta = []  # (account_name, connector_name)
+
         for account_name, connectors in all_connectors.items():
+            # Filter by account_names if specified
+            if account_names and account_name not in account_names:
+                continue
+
             if account_name not in self.accounts_state:
                 self.accounts_state[account_name] = {}
             for connector_name, connector in connectors.items():
-                try:
-                    tokens_info = await self._get_connector_tokens_info(connector, connector_name)
-                    self.accounts_state[account_name][connector_name] = tokens_info
-                except Exception as e:
-                    logger.error(f"Error updating balances for connector {connector_name} in account {account_name}: {e}")
-                    self.accounts_state[account_name][connector_name] = []
+                # Filter by connector_names if specified
+                if connector_names and connector_name not in connector_names:
+                    continue
 
-        # Add Gateway wallet balances to master_account if Gateway is available
-        await self._update_gateway_balances()
+                tasks.append(self._get_connector_tokens_info(connector, connector_name))
+                task_meta.append((account_name, connector_name))
+
+        # Execute connectors + gateway in parallel (unless skip_gateway is True)
+        if skip_gateway:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        else:
+            # Pass connector_names filter to gateway for chain-network filtering
+            results = await asyncio.gather(
+                *tasks,
+                self._update_gateway_balances(chain_networks=connector_names),
+                return_exceptions=True
+            )
+            # Remove gateway result from processing (it handles its own state internally)
+            results = results[:-1]
+
+        # Process results
+        for (account_name, connector_name), result in zip(task_meta, results):
+            if isinstance(result, Exception):
+                logger.error(f"Error updating balances for connector {connector_name} in account {account_name}: {result}")
+                self.accounts_state[account_name][connector_name] = []
+            else:
+                self.accounts_state[account_name][connector_name] = result
 
     async def _get_connector_tokens_info(self, connector, connector_name: str) -> List[Dict]:
         """Get token info from a connector instance using cached prices when available."""
@@ -451,18 +497,20 @@ class AccountsService:
         :param connector_name:
         :return:
         """
+        # Delete credentials file if it exists
         if fs_util.path_exists(f"credentials/{account_name}/connectors/{connector_name}.yml"):
             fs_util.delete_file(directory=f"credentials/{account_name}/connectors", file_name=f"{connector_name}.yml")
-            
-            # Stop the connector if it's running
-            await self.connector_manager.stop_connector(account_name, connector_name)
-            
-            # Remove from account state
-            if account_name in self.accounts_state and connector_name in self.accounts_state[account_name]:
-                self.accounts_state[account_name].pop(connector_name)
-            
-            # Clear the connector from cache
-            self.connector_manager.clear_cache(account_name, connector_name)
+
+        # Always perform cleanup regardless of file existence
+        # Stop the connector if it's running
+        await self.connector_manager.stop_connector(account_name, connector_name)
+
+        # Remove from account state
+        if account_name in self.accounts_state and connector_name in self.accounts_state[account_name]:
+            self.accounts_state[account_name].pop(connector_name)
+
+        # Clear the connector from cache
+        self.connector_manager.clear_cache(account_name, connector_name)
 
     def add_account(self, account_name: str):
         """
@@ -518,26 +566,36 @@ class AccountsService:
             # Fallback to in-memory state
             return self.accounts_state.get(account_name, {})
     
-    async def get_account_state_history(self, 
-                                        account_name: str, 
+    async def get_account_state_history(self,
+                                        account_name: str,
                                         limit: Optional[int] = None,
                                         cursor: Optional[str] = None,
                                         start_time: Optional[datetime] = None,
-                                        end_time: Optional[datetime] = None):
+                                        end_time: Optional[datetime] = None,
+                                        interval: str = "5m"):
         """
-        Get historical state for a specific account with pagination.
+        Get historical state for a specific account with pagination and interval sampling.
+
+        Args:
+            account_name: Account name to filter by
+            limit: Maximum number of records to return
+            cursor: Cursor for pagination
+            start_time: Start time filter
+            end_time: End time filter
+            interval: Sampling interval (5m, 15m, 30m, 1h, 4h, 12h, 1d)
         """
         await self.ensure_db_initialized()
-        
+
         try:
             async with self.db_manager.get_session_context() as session:
                 repository = AccountRepository(session)
                 return await repository.get_account_state_history(
-                    account_name=account_name, 
+                    account_name=account_name,
                     limit=limit,
                     cursor=cursor,
                     start_time=start_time,
-                    end_time=end_time
+                    end_time=end_time,
+                    interval=interval
                 )
         except Exception as e:
             logger.error(f"Error getting account state history: {e}")
@@ -966,7 +1024,25 @@ class AccountsService:
             raise HTTPException(status_code=404, detail=f"Connector '{connector_name}' not found for account '{account_name}'")
         
         return await self.connector_manager.get_connector(account_name, connector_name)
-    
+
+    async def _get_perpetual_connector(self, account_name: str, connector_name: str):
+        """
+        Get a perpetual connector instance with validation.
+
+        Args:
+            account_name: Name of the account
+            connector_name: Name of the connector (must be perpetual)
+
+        Returns:
+            Perpetual connector instance
+
+        Raises:
+            HTTPException: If connector is not perpetual or not found
+        """
+        if "_perpetual" not in connector_name:
+            raise HTTPException(status_code=400, detail=f"Connector '{connector_name}' is not a perpetual connector")
+        return await self.get_connector_instance(account_name, connector_name)
+
     async def get_active_orders(self, account_name: str, connector_name: str) -> Dict[str, any]:
         """
         Get active orders for a specific connector.
@@ -1010,30 +1086,25 @@ class AccountsService:
             logger.error(f"Failed to initiate cancellation for order {client_order_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to initiate order cancellation: {str(e)}")
     
-    async def set_leverage(self, account_name: str, connector_name: str, 
+    async def set_leverage(self, account_name: str, connector_name: str,
                           trading_pair: str, leverage: int) -> Dict[str, str]:
         """
         Set leverage for a specific trading pair on a perpetual connector.
-        
+
         Args:
             account_name: Name of the account
             connector_name: Name of the connector (must be perpetual)
             trading_pair: Trading pair to set leverage for
             leverage: Leverage value (typically 1-125)
-            
+
         Returns:
             Dictionary with success status and message
-            
+
         Raises:
             HTTPException: If account/connector not found, not perpetual, or operation fails
         """
-        # Validate this is a perpetual connector
-        if "_perpetual" not in connector_name:
-            raise HTTPException(status_code=400, detail=f"Connector '{connector_name}' is not a perpetual connector")
-        
-        connector = await self.get_connector_instance(account_name, connector_name)
-        
-        # Check if connector has leverage functionality
+        connector = await self._get_perpetual_connector(account_name, connector_name)
+
         if not hasattr(connector, '_execute_set_leverage'):
             raise HTTPException(status_code=400, detail=f"Connector '{connector_name}' does not support leverage setting")
         
@@ -1047,28 +1118,24 @@ class AccountsService:
             logger.error(f"Failed to set leverage for {trading_pair} to {leverage}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to set leverage: {str(e)}")
 
-    async def set_position_mode(self, account_name: str, connector_name: str, 
+    async def set_position_mode(self, account_name: str, connector_name: str,
                                position_mode: PositionMode) -> Dict[str, str]:
         """
         Set position mode for a perpetual connector.
-        
+
         Args:
             account_name: Name of the account
             connector_name: Name of the connector (must be perpetual)
             position_mode: PositionMode.HEDGE or PositionMode.ONEWAY
-            
+
         Returns:
             Dictionary with success status and message
-            
+
         Raises:
             HTTPException: If account/connector not found, not perpetual, or operation fails
         """
-        # Validate this is a perpetual connector
-        if "_perpetual" not in connector_name:
-            raise HTTPException(status_code=400, detail=f"Connector '{connector_name}' is not a perpetual connector")
-        
-        connector = await self.get_connector_instance(account_name, connector_name)
-        
+        connector = await self._get_perpetual_connector(account_name, connector_name)
+
         # Check if the requested position mode is supported
         supported_modes = connector.supported_position_modes()
         if position_mode not in supported_modes:
@@ -1096,24 +1163,19 @@ class AccountsService:
     async def get_position_mode(self, account_name: str, connector_name: str) -> Dict[str, str]:
         """
         Get current position mode for a perpetual connector.
-        
+
         Args:
             account_name: Name of the account
             connector_name: Name of the connector (must be perpetual)
-            
+
         Returns:
             Dictionary with current position mode
-            
+
         Raises:
             HTTPException: If account/connector not found, not perpetual, or operation fails
         """
-        # Validate this is a perpetual connector
-        if "_perpetual" not in connector_name:
-            raise HTTPException(status_code=400, detail=f"Connector '{connector_name}' is not a perpetual connector")
-        
-        connector = await self.get_connector_instance(account_name, connector_name)
-        
-        # Check if connector has position mode functionality
+        connector = await self._get_perpetual_connector(account_name, connector_name)
+
         if not hasattr(connector, 'position_mode'):
             raise HTTPException(status_code=400, detail=f"Connector '{connector_name}' does not support position mode")
         
@@ -1224,24 +1286,19 @@ class AccountsService:
     async def get_account_positions(self, account_name: str, connector_name: str) -> List[Dict]:
         """
         Get current positions for a specific perpetual connector.
-        
+
         Args:
             account_name: Name of the account
             connector_name: Name of the connector (must be perpetual)
-            
+
         Returns:
             List of position dictionaries
-            
+
         Raises:
             HTTPException: If account/connector not found or not perpetual
         """
-        # Validate this is a perpetual connector
-        if "_perpetual" not in connector_name:
-            raise HTTPException(status_code=400, detail=f"Connector '{connector_name}' is not a perpetual connector")
-        
-        connector = await self.get_connector_instance(account_name, connector_name)
-        
-        # Check if connector has account_positions property
+        connector = await self._get_perpetual_connector(account_name, connector_name)
+
         if not hasattr(connector, 'account_positions'):
             raise HTTPException(status_code=400, detail=f"Connector '{connector_name}' does not support position tracking")
         
@@ -1343,8 +1400,14 @@ class AccountsService:
     # Gateway Wallet Management Methods
     # ============================================
 
-    async def _update_gateway_balances(self):
-        """Update Gateway wallet balances in master_account state."""
+    async def _update_gateway_balances(self, chain_networks: Optional[List[str]] = None):
+        """Update Gateway wallet balances in master_account state.
+
+        Args:
+            chain_networks: If provided, only update these chain-network combinations
+                           (e.g., ['solana-mainnet-beta', 'ethereum-mainnet']).
+                           If None, update all available chain-networks.
+        """
         try:
             # Check if Gateway is available
             if not await self.gateway_client.ping():
@@ -1355,6 +1418,18 @@ class AccountsService:
             wallets = await self.gateway_client.get_wallets()
             if not wallets:
                 logger.debug("No Gateway wallets found")
+                # Clear any stale gateway balances from master_account when no wallets exist
+                if "master_account" in self.accounts_state:
+                    chains_result = await self.gateway_client.get_chains()
+                    if chains_result and "chains" in chains_result:
+                        known_chains = {c["chain"] for c in chains_result["chains"]}
+                        stale_keys = [
+                            key for key in list(self.accounts_state["master_account"].keys())
+                            if "-" in key and key.split("-")[0] in known_chains
+                        ]
+                        for key in stale_keys:
+                            logger.info(f"Removing stale Gateway balance data for {key} (no wallets exist)")
+                            del self.accounts_state["master_account"][key]
                 return
 
             # Get all available chains and networks
@@ -1392,16 +1467,25 @@ class AccountsService:
 
                 # Create tasks for all networks for this wallet
                 for network in networks:
+                    chain_network_key = f"{chain}-{network}"
+
+                    # Filter by chain_networks if specified
+                    if chain_networks:
+                        if chain_network_key not in chain_networks:
+                            continue
+
                     balance_tasks.append(self.get_gateway_balances(chain, address, network=network))
                     task_metadata.append((chain, network, address))
 
             # Execute all balance queries in parallel
             if balance_tasks:
-                t_zero = time.time()
                 results = await asyncio.gather(*balance_tasks, return_exceptions=True)
-                duration = time.time() - t_zero
+
+                # Build set of active chain-network keys from current wallets
+                active_chain_networks = {f"{chain}-{network}" for chain, network, _ in task_metadata}
+
                 # Process results
-                for idx, (result, (chain, network, address)) in enumerate(zip(results, task_metadata)):
+                for result, (chain, network, address) in zip(results, task_metadata):
                     chain_network = f"{chain}-{network}"
 
                     if isinstance(result, Exception):
@@ -1414,6 +1498,24 @@ class AccountsService:
                     else:
                         # Store empty list to indicate we checked this network
                         self.accounts_state["master_account"][chain_network] = []
+
+                # Only remove stale keys if we're doing a full update (no filter)
+                # When filtering, we don't want to remove keys that weren't in the filter
+                if not chain_networks:
+                    # Remove stale gateway chain-network keys (wallets that were deleted)
+                    # Gateway keys follow pattern: chain-network (e.g., "solana-mainnet-beta", "ethereum-mainnet")
+                    stale_keys = []
+                    for key in self.accounts_state["master_account"]:
+                        # Check if key looks like a gateway chain-network (contains hyphen and matches chain pattern)
+                        if "-" in key and key not in active_chain_networks:
+                            # Verify it's a gateway key by checking if chain part matches known chains
+                            chain_part = key.split("-")[0]
+                            if chain_part in chain_networks_map:
+                                stale_keys.append(key)
+
+                    for key in stale_keys:
+                        logger.info(f"Removing stale Gateway balance data for {key} (wallet no longer exists)")
+                        del self.accounts_state["master_account"][key]
 
         except Exception as e:
             logger.error(f"Error updating Gateway balances: {e}")
@@ -1535,9 +1637,9 @@ class AccountsService:
 
             # Get prices using rate sources (similar to _get_connector_tokens_info)
             unique_tokens = [b["token"] for b in balances_list]
-            connector_name = f"gateway_{chain}-{network}"
 
             # Try to get cached prices first
+            # Try USDT first (more common in CEX like Binance), then USDC (common in DEX)
             prices_from_cache = {}
             tokens_need_update = []
 
@@ -1545,29 +1647,52 @@ class AccountsService:
                 for token in unique_tokens:
                     try:
                         token_unwrapped = self.get_unwrapped_token(token)
-                        trading_pair = f"{token_unwrapped}-USDT"
-                        cached_price = self.market_data_feed_manager.market_data_provider.get_rate(trading_pair)
-                        if cached_price > 0:
-                            prices_from_cache[trading_pair] = cached_price
-                        else:
+                        # Try USDT first (Binance, etc.), then USDC as fallback (DEX)
+                        found_price = False
+                        for quote in ["USDT", "USDC"]:
+                            trading_pair = f"{token_unwrapped}-{quote}"
+                            try:
+                                cached_price = self.market_data_feed_manager.market_data_provider.get_rate(trading_pair)
+                                if cached_price > 0:
+                                    prices_from_cache[token] = cached_price
+                                    found_price = True
+                                    break
+                            except Exception:
+                                continue
+                        if not found_price:
                             tokens_need_update.append(token)
                     except Exception:
                         tokens_need_update.append(token)
             else:
                 tokens_need_update = unique_tokens
 
-            # Initialize rate sources for Gateway (using "gateway" as connector for AMM pairs)
-            if tokens_need_update:
-                pricing_connector = self.gateway_default_pricing_connector[chain]
+            # Initialize rate sources for Gateway using the old format: "gateway_{chain}-{network}"
+            # The MarketDataProvider.update_rates_task() will detect this format and resolve
+            # the correct pricing connector (jupiter/router for solana, uniswap/router for ethereum, etc.)
+            if tokens_need_update and self.market_data_feed_manager:
+                # Use the format that MarketDataProvider expects for gateway connectors
+                gateway_connector_key = f"gateway_{chain}-{network}"
                 trading_pairs_need_update = [f"{token}-USDC" for token in tokens_need_update]
-                connector_pairs = [ConnectorPair(connector_name=pricing_connector, trading_pair=tp) for tp in trading_pairs_need_update]
+                connector_pairs = [ConnectorPair(connector_name=gateway_connector_key, trading_pair=tp) for tp in trading_pairs_need_update]
+
                 for pair in connector_pairs:
                     self.market_data_feed_manager.market_data_provider._rates_required.add_or_update(
-                        f"gateway_{chain}-{network}", pair
+                        gateway_connector_key, pair
                     )
-                logger.info(f"Added {len(trading_pairs_need_update)} Gateway trading pairs to market data provider: {trading_pairs_need_update}")
+                logger.info(f"Added {len(trading_pairs_need_update)} Gateway trading pairs to market data provider for {gateway_connector_key}: {trading_pairs_need_update}")
 
-            # Use cached prices (rate sources will update in background)
+                # Trigger immediate price fetch for the new tokens
+                try:
+                    fetched_prices = await self._fetch_gateway_prices_immediate(
+                        chain, network, tokens_need_update
+                    )
+                    for token, price in fetched_prices.items():
+                        if price > 0:
+                            prices_from_cache[token] = price
+                except Exception as e:
+                    logger.warning(f"Error fetching immediate gateway prices: {e}")
+
+            # Use cached prices
             all_prices = prices_from_cache
 
             # Format final result with prices
@@ -1577,8 +1702,8 @@ class AccountsService:
                 if "USD" in token:
                     price = Decimal("1")
                 else:
-                    market = self.get_default_market(token, connector_name)
-                    price = Decimal(str(all_prices.get(market, 0)))
+                    # all_prices is now keyed by token name directly
+                    price = Decimal(str(all_prices.get(token, 0)))
 
                 formatted_balances.append({
                     "token": token,
@@ -1596,9 +1721,79 @@ class AccountsService:
             logger.error(f"Error getting Gateway balances: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get balances: {str(e)}")
 
+    async def _fetch_gateway_prices_immediate(self, chain: str, network: str,
+                                               tokens: List[str]) -> Dict[str, Decimal]:
+        """
+        Fetch prices immediately from Gateway for the given tokens.
+        This is used to get prices right away instead of waiting for the background update task.
+
+        Uses the same pricing connector resolution as MarketDataProvider.update_rates_task():
+        - solana -> jupiter/router
+        - ethereum -> uniswap/router
+
+        Args:
+            chain: Blockchain chain (e.g., 'solana', 'ethereum')
+            network: Network name (e.g., 'mainnet-beta', 'mainnet')
+            tokens: List of token symbols to get prices for
+
+        Returns:
+            Dictionary mapping token symbol to price in USDC
+        """
+        from hummingbot.core.gateway.gateway_http_client import GatewayHttpClient
+        from hummingbot.core.rate_oracle.rate_oracle import RateOracle
+        from hummingbot.core.data_type.common import TradeType
+
+        gateway_client = GatewayHttpClient.get_instance()
+        rate_oracle = RateOracle.get_instance()
+        prices = {}
+
+        # Resolve pricing connector based on chain (same logic as MarketDataProvider)
+        pricing_connector = self.gateway_default_pricing_connector.get(chain)
+        if not pricing_connector:
+            logger.warning(f"No pricing connector configured for chain '{chain}', skipping immediate price fetch")
+            return prices
+
+        # Create tasks for all tokens in parallel
+        tasks = []
+        task_tokens = []
+
+        for token in tokens:
+            try:
+                task = gateway_client.get_price(
+                    chain=chain,
+                    network=network,
+                    connector=pricing_connector,
+                    base_asset=token,
+                    quote_asset="USDC",
+                    amount=Decimal("1"),
+                    side=TradeType.SELL
+                )
+                tasks.append(task)
+                task_tokens.append(token)
+            except Exception as e:
+                logger.warning(f"Error preparing price request for {token}: {e}")
+                continue
+
+        if tasks:
+            try:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for token, result in zip(task_tokens, results):
+                    if isinstance(result, Exception):
+                        logger.warning(f"Error fetching price for {token}: {result}")
+                    elif result and "price" in result:
+                        price = Decimal(str(result["price"]))
+                        prices[token] = price
+                        # Also update the rate oracle so future lookups can find it
+                        trading_pair = f"{token}-USDC"
+                        rate_oracle.set_price(trading_pair, price)
+                        logger.debug(f"Fetched immediate price for {token}: {price} USDC")
+            except Exception as e:
+                logger.error(f"Error fetching gateway prices: {e}", exc_info=True)
+
+        return prices
+
     def get_unwrapped_token(self, token: str) -> str:
-        """Get the unwrapped version of a wrapped token symbol."""
-        for pw in self.potential_wrapped_tokens:
-            if token in pw:
-                return pw
+        """Get the unwrapped version of a wrapped token symbol (e.g., WSOL -> SOL)."""
+        if token.startswith("W") and token[1:] in self.potential_wrapped_tokens:
+            return token[1:]
         return token

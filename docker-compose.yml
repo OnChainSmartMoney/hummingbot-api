@@ -5,16 +5,16 @@ services:
     ports:
       - "8501:8501"
     environment:
-        - AUTH_SYSTEM_ENABLED=False
-        - BACKEND_API_HOST=hummingbot-api
-        - BACKEND_API_PORT=8000
-        - BACKEND_API_USERNAME=${USERNAME}
-        - BACKEND_API_PASSWORD=${PASSWORD}
+      - AUTH_SYSTEM_ENABLED=False
+      - BACKEND_API_HOST=hummingbot-api
+      - BACKEND_API_PORT=8000
+      - BACKEND_API_USERNAME=${USERNAME}
+      - BACKEND_API_PASSWORD=${PASSWORD}
     volumes:
       - ./dashboard-credentials.yml:/home/dashboard/credentials.yml
       - ./pages:/home/dashboard/pages
     networks:
-        - emqx-bridge
+      - emqx-bridge
   hummingbot-api:
     container_name: hummingbot-api
     image: hummingbot/hummingbot-api:latest
@@ -54,13 +54,13 @@ services:
       - emqx-log:/opt/emqx/log
       - emqx-etc:/opt/emqx/etc
     ports:
-      - "1883:1883"  # mqtt:tcp
-      - "8883:8883"  # mqtt:tcp:ssl
-      - "8083:8083"  # mqtt:ws
-      - "8084:8084"  # mqtt:ws:ssl
-      - "8081:8081"  # http:management
-      - "18083:18083"  # http:dashboard
-      - "61613:61613"  # web-stomp gateway
+      - "1883:1883" # mqtt:tcp
+      - "8883:8883" # mqtt:tcp:ssl
+      - "8083:8083" # mqtt:ws
+      - "8084:8084" # mqtt:ws:ssl
+      - "8081:8081" # http:management
+      - "18083:18083" # http:dashboard
+      - "61613:61613" # web-stomp gateway
     networks:
       emqx-bridge:
         aliases:
@@ -90,7 +90,7 @@ services:
     networks:
       - emqx-bridge
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hbot -d hummingbot_api"]
+      test: [ "CMD-SHELL", "pg_isready -U hbot -d hummingbot_api" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -100,7 +100,7 @@ networks:
     driver: bridge
 
 volumes:
-  emqx-data: { }
-  emqx-log: { }
-  emqx-etc: { }
-  postgres-data: { }
+  emqx-data: {}
+  emqx-log: {}
+  emqx-etc: {}
+  postgres-data: {}
