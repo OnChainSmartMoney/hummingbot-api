@@ -132,7 +132,8 @@ class BotsOrchestrator:
                         await self.mqtt_manager.subscribe_to_bot(bot_name)
 
             except Exception as e:
-                logger.error(f"Error in update_active_bots: {e}", exc_info=True)
+                logger.error(
+                    f"Error in update_active_bots: {e}", exc_info=True)
 
             await asyncio.sleep(sleep_time)
 
@@ -177,7 +178,7 @@ class BotsOrchestrator:
 
         # Clear performance data after stop command to immediately reflect stopped status
         if success:
-            self.mqtt_manager.clear_bot_performance(bot_name)
+            self.mqtt_manager.clear_bot_controller_reports(bot_name)
 
         return {"success": success}
 
@@ -244,26 +245,59 @@ class BotsOrchestrator:
         return {"success": True, "data": response}
 
     @staticmethod
-    def determine_controller_performance(controllers_performance):
-        cleaned_performance = {}
-        for controller, performance in controllers_performance.items():
+    def determine_controller_performance(controller_reports):
+        """Process controller reports and extract performance and custom_info.
+
+        Args:
+            controller_reports: Dict with controller_id as key and report dict as value.
+                New format: Each report contains 'performance' and 'custom_info' keys.
+                Old format: Report contains performance metrics directly (backward compatible).
+
+        Returns:
+            Dict with cleaned controller data including status, performance, and custom_info.
+        """
+        cleaned_data = {}
+        for controller_id, report in controller_reports.items():
             try:
-                # Check if all the metrics are numeric
+                # Support both new format (nested) and old format (flat)
+                # New format: {"performance": {...}, "custom_info": {...}}
+                # Old format: {...performance metrics directly...}
+                if "performance" in report:
+                    # New format with nested structure
+                    performance = report.get("performance", {})
+                    custom_info = report.get("custom_info", {})
+                else:
+                    # Old format - metrics are directly in the report
+                    performance = report
+                    custom_info = {}
+
+                # Validate performance metrics are numeric (skip known non-numeric fields)
+                non_numeric_fields = ("positions_summary", "close_type_counts")
                 _ = sum(
-                    metric
-                    for key, metric in performance.items()
-                    if key not in ("positions_summary", "close_type_counts")
+                    metric for key, metric in performance.items()
+                    if key not in non_numeric_fields and isinstance(metric, (int, float))
                 )
-                cleaned_performance[controller] = {
+
+                cleaned_data[controller_id] = {
                     "status": "running",
                     "performance": performance,
+                    "custom_info": custom_info
                 }
             except Exception as e:
-                cleaned_performance[controller] = {
+                # Handle both formats in error case too
+                if "performance" in report:
+                    perf = report.get("performance", {})
+                    info = report.get("custom_info", {})
+                else:
+                    perf = report
+                    info = {}
+                cleaned_data[controller_id] = {
                     "status": "error",
-                    "error": f"Some metrics are not numeric, check logs and restart controller: {e}",
+                    "error": f"Error processing controller data: {e}",
+                    "performance": perf,
+                    "custom_info": info
                 }
-        return cleaned_performance
+        return cleaned_data
 
     def get_all_bots_status(self):
         # TODO: improve logic of bots state management
@@ -295,13 +329,16 @@ class BotsOrchestrator:
                 }
 
             # Get data from MQTT manager
-            controllers_performance = self.mqtt_manager.get_bot_performance(bot_name)
-            performance = self.determine_controller_performance(controllers_performance)
+            controller_reports = self.mqtt_manager.get_bot_controller_reports(
+                bot_name)
+            performance = self.determine_controller_performance(
+                controller_reports)
             error_logs = self.mqtt_manager.get_bot_error_logs(bot_name)
             general_logs = self.mqtt_manager.get_bot_logs(bot_name)
 
             # Check if bot has sent recent messages (within last 30 seconds)
-            discovered_bots = self.mqtt_manager.get_discovered_bots(timeout_seconds=30)
+            discovered_bots = self.mqtt_manager.get_discovered_bots(
+                timeout_seconds=30)
             recently_active = bot_name in discovered_bots
 
             # Determine status based on performance data and recent activity

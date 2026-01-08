@@ -64,7 +64,8 @@ class V2WithControllers(StrategyV2Base):
         for controller_id, controller in self.controllers.items():
             if controller.status != RunnableStatus.RUNNING:
                 continue
-            controller_pnl = self.get_performance_report(controller_id).global_pnl_quote
+            controller_pnl = self.get_performance_report(
+                controller_id).global_pnl_quote
             last_max_pnl = self.max_pnl_by_controller[controller_id]
             if controller_pnl > last_max_pnl:
                 self.max_pnl_by_controller[controller_id] = controller_pnl
@@ -76,7 +77,8 @@ class V2WithControllers(StrategyV2Base):
                     )
                     controller.stop()
                     executors_order_placed = self.filter_executors(
-                        executors=self.get_executors_by_controller(controller_id),
+                        executors=self.get_executors_by_controller(
+                            controller_id),
                         filter_func=lambda x: x.is_active and not x.is_trading,
                     )
                     self.executor_orchestrator.execute_actions(
@@ -101,22 +103,28 @@ class V2WithControllers(StrategyV2Base):
         else:
             current_global_drawdown = self.max_global_pnl - current_global_pnl
             if current_global_drawdown > self.config.max_global_drawdown_quote:
-                self.drawdown_exited_controllers.extend(list(self.controllers.keys()))
+                self.drawdown_exited_controllers.extend(
+                    list(self.controllers.keys()))
                 self.logger().info("Global drawdown reached. Stopping the strategy.")
                 self._is_stop_triggered = True
                 HummingbotApplication.main_application().stop()
 
+    def get_controller_report(self, controller_id: str) -> dict:
+        """
+        Get the full report for a controller including performance and custom info.
+        """
+        performance_report = self.controller_reports.get(
+            controller_id, {}).get("performance")
+        return {
+            "performance": performance_report.dict() if performance_report else {},
+            "custom_info": self.controllers[controller_id].get_custom_info()
+        }
+
     def send_performance_report(self):
-        if (
-            self.current_timestamp - self._last_performance_report_timestamp
-            >= self.performance_report_interval
-            and self._pub
-        ):
-            performance_reports = {
-                controller_id: self.get_performance_report(controller_id).dict()
-                for controller_id in self.controllers.keys()
-            }
-            self._pub(performance_reports)
+        if self.current_timestamp - self._last_performance_report_timestamp >= self.performance_report_interval and self._pub:
+            controller_reports = {controller_id: self.get_controller_report(
+                controller_id) for controller_id in self.controllers.keys()}
+            self._pub(controller_reports)
             self._last_performance_report_timestamp = self.current_timestamp
 
     def check_manual_kill_switch(self):
@@ -125,9 +133,11 @@ class V2WithControllers(StrategyV2Base):
                 controller.config.manual_kill_switch
                 and controller.status == RunnableStatus.RUNNING
             ):
-                self.logger().info(f"Manual cash out for controller {controller_id}.")
+                self.logger().info(
+                    f"Manual cash out for controller {controller_id}.")
                 controller.stop()
-                executors_to_stop = self.get_executors_by_controller(controller_id)
+                executors_to_stop = self.get_executors_by_controller(
+                    controller_id)
                 self.executor_orchestrator.execute_actions(
                     [
                         StopExecutorAction(
@@ -184,14 +194,12 @@ class V2WithControllers(StrategyV2Base):
             if "connector_name" in config_dict:
                 if self.is_perpetual(config_dict["connector_name"]):
                     if "position_mode" in config_dict:
-                        connectors_position_mode[config_dict["connector_name"]] = (
-                            config_dict["position_mode"]
-                        )
+                        connectors_position_mode[config_dict["connector_name"]
+                                                 ] = config_dict["position_mode"]
                     if "leverage" in config_dict and "trading_pair" in config_dict:
                         self.connectors[config_dict["connector_name"]].set_leverage(
                             leverage=config_dict["leverage"],
-                            trading_pair=config_dict["trading_pair"],
-                        )
+                            trading_pair=config_dict["trading_pair"])
         for connector_name, position_mode in connectors_position_mode.items():
             self.connectors[connector_name].set_position_mode(position_mode)
 
@@ -199,10 +207,7 @@ class V2WithControllers(StrategyV2Base):
         """
         Handle order failure events by logging the error and stopping the strategy if necessary.
         """
-        if (
-            order_failed_event.error_message
-            and "position side" in order_failed_event.error_message.lower()
-        ):
+        if order_failed_event.error_message and "position side" in order_failed_event.error_message.lower():
             connectors_position_mode = {}
             for controller_id, controller in self.controllers.items():
                 config_dict = controller.config.model_dump()
@@ -213,7 +218,8 @@ class V2WithControllers(StrategyV2Base):
                                 config_dict["position_mode"]
                             )
             for connector_name, position_mode in connectors_position_mode.items():
-                self.connectors[connector_name].set_position_mode(position_mode)
+                self.connectors[connector_name].set_position_mode(
+                    position_mode)
 
     def custom_command(
         self, custom_command: str, params: Optional[Dict[str, Any]] = None

@@ -209,24 +209,29 @@ async def stop_bot(
     Returns:
         Dictionary with status and response from bot stop operation
     """
-    response = await bots_manager.stop_bot(
-        action.bot_name,
-        skip_order_cancellation=action.skip_order_cancellation,
-        async_backend=action.async_backend,
-    )
+    # Capture final status BEFORE stopping (performance data is cleared on stop)
+    final_status = None
+    try:
+        final_status = bots_manager.get_bot_status(action.bot_name)
+        logger.info(
+            f"Captured final status for {action.bot_name} before stopping")
+    except Exception as e:
+        logger.warning(
+            f"Failed to capture final status for {action.bot_name}: {e}")
+
+    response = await bots_manager.stop_bot(action.bot_name, skip_order_cancellation=action.skip_order_cancellation,
+                                           async_backend=action.async_backend)
 
     # Update bot run status to STOPPED if stop was successful
     if response.get("success"):
         try:
-            # Try to get bot status for final status data
-            final_status = bots_manager.get_bot_status(action.bot_name)
-
             async with db_manager.get_session_context() as session:
                 bot_run_repo = BotRunRepository(session)
                 await bot_run_repo.update_bot_run_stopped(
                     action.bot_name, final_status=final_status
                 )
-                logger.info(f"Updated bot run status to STOPPED for {action.bot_name}")
+                logger.info(
+                    f"Updated bot run status to STOPPED for {action.bot_name}")
         except Exception as e:
             logger.error(f"Failed to update bot run status: {e}")
             # Don't fail the stop operation if bot run update fails
@@ -416,7 +421,8 @@ async def _background_stop_and_archive(
         logger.info(f"Capturing final status for {bot_name_for_orchestrator}")
         final_status = None
         try:
-            final_status = bots_manager.get_bot_status(bot_name_for_orchestrator)
+            final_status = bots_manager.get_bot_status(
+                bot_name_for_orchestrator)
             logger.info(
                 f"Captured final status for {bot_name_for_orchestrator}: {final_status}"
             )
@@ -441,7 +447,8 @@ async def _background_stop_and_archive(
 
         # Step 3: Mark the bot as stopping, and stop the bot trading process
         bots_manager.set_bot_stopping(bot_name_for_orchestrator)
-        logger.info(f"Stopping bot trading process for {bot_name_for_orchestrator}")
+        logger.info(
+            f"Stopping bot trading process for {bot_name_for_orchestrator}")
         stop_response = await bots_manager.stop_bot(
             bot_name_for_orchestrator,
             skip_order_cancellation=skip_order_cancellation,
@@ -458,7 +465,8 @@ async def _background_stop_and_archive(
             return
 
         # Step 4: Wait for graceful shutdown (15 seconds as requested)
-        logger.info(f"Waiting 15 seconds for bot {bot_name} to gracefully shutdown")
+        logger.info(
+            f"Waiting 15 seconds for bot {bot_name} to gracefully shutdown")
         await asyncio.sleep(15)
 
         # Step 5: Stop the container with monitoring
@@ -473,7 +481,8 @@ async def _background_stop_and_archive(
             docker_manager.stop_container(container_name)
 
             # Check if container is already stopped
-            container_status = docker_manager.get_container_status(container_name)
+            container_status = docker_manager.get_container_status(
+                container_name)
             if container_status.get("state", {}).get("status") == "exited":
                 container_stopped = True
                 logger.info(f"Container {container_name} is already stopped")
@@ -505,7 +514,8 @@ async def _background_stop_and_archive(
 
         # Step 7: Remove the container
         logging.info(f"Removing container {container_name}")
-        remove_response = docker_manager.remove_container(container_name, force=False)
+        remove_response = docker_manager.remove_container(
+            container_name, force=False)
 
         if not remove_response.get("success"):
             # If graceful remove fails, try force remove
@@ -517,7 +527,8 @@ async def _background_stop_and_archive(
             )
 
         if remove_response.get("success"):
-            logging.info(f"Successfully completed stop-and-archive for bot {bot_name}")
+            logging.info(
+                f"Successfully completed stop-and-archive for bot {bot_name}")
 
             # Step 8: Update bot run deployment status to ARCHIVED
             try:
@@ -540,12 +551,14 @@ async def _background_stop_and_archive(
                         bot_name,
                         error_message="Failed to remove container during archive process",
                     )
-                    logger.info(f"Updated bot run with error status for {bot_name}")
+                    logger.info(
+                        f"Updated bot run with error status for {bot_name}")
             except Exception as e:
                 logger.error(f"Failed to update bot run with error: {e}")
 
     except Exception as e:
-        logging.error(f"Error in background stop-and-archive for {bot_name}: {str(e)}")
+        logging.error(
+            f"Error in background stop-and-archive for {bot_name}: {str(e)}")
 
         # Update bot run with error status
         try:
@@ -554,7 +567,8 @@ async def _background_stop_and_archive(
                 await bot_run_repo.update_bot_run_stopped(
                     bot_name, error_message=str(e)
                 )
-                logger.info(f"Updated bot run with error status for {bot_name}")
+                logger.info(
+                    f"Updated bot run with error status for {bot_name}")
         except Exception as db_error:
             logger.error(f"Failed to update bot run with error: {db_error}")
     finally:
@@ -608,7 +622,8 @@ async def stop_and_archive_bot(
         active_bots = list(bots_manager.active_bots.keys())
 
         # Check if bot exists in active bots (could be stored as either format)
-        bot_found = (actual_bot_name in active_bots) or (container_name in active_bots)
+        bot_found = (actual_bot_name in active_bots) or (
+            container_name in active_bots)
 
         if not bot_found:
             return {
@@ -657,7 +672,8 @@ async def stop_and_archive_bot(
         }
 
     except Exception as e:
-        logging.error(f"Error initiating stop_and_archive_bot for {bot_name}: {str(e)}")
+        logging.error(
+            f"Error initiating stop_and_archive_bot for {bot_name}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -696,7 +712,8 @@ async def deploy_v2_script(
                     image_version=config.image,
                     deployment_config=config.dict(),
                 )
-                logger.info(f"Created bot run record for {config.instance_name}")
+                logger.info(
+                    f"Created bot run record for {config.instance_name}")
         except Exception as e:
             logger.error(f"Failed to create bot run record: {e}")
             # Don't fail the deployment if bot run creation fails

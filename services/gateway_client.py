@@ -1,7 +1,7 @@
 import logging
 from typing import Dict, List, Optional
+
 import aiohttp
-from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,8 @@ class GatewayClient:
         """
         parts = network_id.split('-', 1)
         if len(parts) != 2:
-            raise ValueError(f"Invalid network_id format. Expected 'chain-network', got '{network_id}'")
+            raise ValueError(
+                f"Invalid network_id format. Expected 'chain-network', got '{network_id}'")
         return parts[0], parts[1]
 
     async def get_wallet_address_or_default(self, chain: str, wallet_address: Optional[str] = None) -> str:
@@ -61,21 +62,24 @@ class GatewayClient:
                 async with session.get(url, params=params) as response:
                     if not response.ok:
                         error_body = await self._get_error_body(response)
-                        logger.warning(f"Gateway request failed: {method} {url} - {response.status} - {error_body}")
+                        logger.warning(
+                            f"Gateway request failed: {method} {url} - {response.status} - {error_body}")
                         return {"error": error_body, "status": response.status}
                     return await response.json()
             elif method == "POST":
                 async with session.post(url, json=json) as response:
                     if not response.ok:
                         error_body = await self._get_error_body(response)
-                        logger.warning(f"Gateway request failed: {method} {url} - {response.status} - {error_body}")
+                        logger.warning(
+                            f"Gateway request failed: {method} {url} - {response.status} - {error_body}")
                         return {"error": error_body, "status": response.status}
                     return await response.json()
             elif method == "DELETE":
                 async with session.delete(url, params=params, json=json) as response:
                     if not response.ok:
                         error_body = await self._get_error_body(response)
-                        logger.warning(f"Gateway request failed: {method} {url} - {response.status} - {error_body}")
+                        logger.warning(
+                            f"Gateway request failed: {method} {url} - {response.status} - {error_body}")
                         return {"error": error_body, "status": response.status}
                     return await response.json()
         except aiohttp.ClientError as e:
@@ -120,7 +124,8 @@ class GatewayClient:
                     return addresses[0] if addresses else None
             return None
         except Exception as e:
-            logger.error(f"Error getting default wallet for chain {chain}: {e}")
+            logger.error(
+                f"Error getting default wallet for chain {chain}: {e}")
             return None
 
     async def get_all_wallet_addresses(self, chain: Optional[str] = None) -> Dict[str, List[str]]:
@@ -161,6 +166,38 @@ class GatewayClient:
             "chain": chain,
             "privateKey": private_key,
             "setDefault": set_default
+        })
+
+    async def create_wallet(self, chain: str, set_default: bool = True) -> Dict:
+        """Create a new wallet in Gateway"""
+        return await self._request("POST", "wallet/create", json={
+            "chain": chain,
+            "setDefault": set_default
+        })
+
+    async def show_private_key(self, chain: str, address: str, passphrase: str) -> Dict:
+        """Show private key for a wallet"""
+        return await self._request("POST", "wallet/show-private-key", json={
+            "chain": chain,
+            "address": address,
+            "passphrase": passphrase
+        })
+
+    async def send_transaction(
+        self,
+        chain: str,
+        network: str,
+        address: str,
+        to_address: str,
+        amount: str
+    ) -> Dict:
+        """Send a native token transaction"""
+        return await self._request("POST", "wallet/send", json={
+            "chain": chain,
+            "network": network,
+            "address": address,
+            "toAddress": to_address,
+            "amount": amount
         })
 
     async def remove_wallet(self, chain: str, address: str) -> Dict:
@@ -459,9 +496,11 @@ class GatewayClient:
         if not connector:
             raise ValueError("connector is required for clmm_position_info")
         if not chain_network:
-            raise ValueError("chain_network is required for clmm_position_info")
+            raise ValueError(
+                "chain_network is required for clmm_position_info")
         if not position_address:
-            raise ValueError("position_address is required for clmm_position_info")
+            raise ValueError(
+                "position_address is required for clmm_position_info")
 
         params = {
             "connector": connector,
@@ -564,7 +603,8 @@ class GatewayClient:
             # Split network_id into chain and network
             parts = network_id.split('-', 1)
             if len(parts) != 2:
-                logger.error(f"Invalid network_id format: {network_id}. Expected 'chain-network'")
+                logger.error(
+                    f"Invalid network_id format: {network_id}. Expected 'chain-network'")
                 return None
 
             chain, network = parts
@@ -580,4 +620,3 @@ class GatewayClient:
         except Exception as e:
             logger.error(f"Error polling transaction {tx_hash}: {e}")
             return None
-

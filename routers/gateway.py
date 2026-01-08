@@ -1,11 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import Optional, Dict, List
 import re
+from typing import Dict, List, Optional
 
-from models import GatewayConfig, GatewayStatus, AddPoolRequest, AddTokenRequest
-from services.gateway_service import GatewayService
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from deps import get_accounts_service, get_gateway_service
+from models import (
+    AddPoolRequest,
+    AddTokenRequest,
+    CreateWalletRequest,
+    GatewayConfig,
+    GatewayStatus,
+    SendTransactionRequest,
+    ShowPrivateKeyRequest,
+)
 from services.accounts_service import AccountsService
-from deps import get_gateway_service, get_accounts_service
+from services.gateway_service import GatewayService
 
 router = APIRouter(tags=["Gateway"], prefix="/gateway")
 
@@ -68,7 +77,8 @@ def normalize_gateway_response(data: Dict) -> Dict:
                 if isinstance(value, dict):
                     normalized[new_key] = normalize_gateway_response(value)
                 elif isinstance(value, list):
-                    normalized[new_key] = [normalize_gateway_response(item) if isinstance(item, dict) else item for item in value]
+                    normalized[new_key] = [normalize_gateway_response(
+                        item) if isinstance(item, dict) else item for item in value]
                 else:
                     normalized[new_key] = value
 
@@ -162,7 +172,8 @@ async def list_connectors(accounts_service: AccountsService = Depends(get_accoun
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         result = await accounts_service.gateway_client._request("GET", "config/connectors")
         return normalize_gateway_response(result)
@@ -170,7 +181,8 @@ async def list_connectors(accounts_service: AccountsService = Depends(get_accoun
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing connectors: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error listing connectors: {str(e)}")
 
 
 @router.get("/connectors/{connector_name}")
@@ -186,7 +198,8 @@ async def get_connector_config(
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         result = await accounts_service.gateway_client.get_config(connector_name)
         return normalize_gateway_response(result)
@@ -194,7 +207,8 @@ async def get_connector_config(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting connector config: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting connector config: {str(e)}")
 
 
 @router.post("/connectors/{connector_name}")
@@ -214,18 +228,26 @@ async def update_connector_config(
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         results = []
         for path, value in config_updates.items():
             # Convert snake_case to camelCase if needed
             camel_path = snake_to_camel(path) if '_' in path else path
-            result = await accounts_service.gateway_client.update_config(connector_name, camel_path, value)
+            result = await accounts_service.gateway_client.update_config(
+                connector_name,
+                camel_path,
+                value,
+            )
             results.append(result)
 
         return {
             "success": True,
-            "message": f"Updated {len(results)} config parameter(s) for {connector_name}. Restart Gateway for changes to take effect.",
+            "message": (
+                f"Updated {len(results)} config parameter(s) for {connector_name}. "
+                "Restart Gateway for changes to take effect."
+            ),
             "restart_required": True,
             "restart_endpoint": "POST /gateway/restart",
             "results": results
@@ -234,7 +256,8 @@ async def update_connector_config(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating connector config: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error updating connector config: {str(e)}")
 
 
 # ============================================
@@ -250,7 +273,8 @@ async def list_chains(accounts_service: AccountsService = Depends(get_accounts_s
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         result = await accounts_service.gateway_client.get_chains()
         return result
@@ -258,7 +282,8 @@ async def list_chains(accounts_service: AccountsService = Depends(get_accounts_s
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing chains: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error listing chains: {str(e)}")
 
 
 # ============================================
@@ -267,7 +292,8 @@ async def list_chains(accounts_service: AccountsService = Depends(get_accounts_s
 
 @router.get("/pools")
 async def list_pools(
-    connector_name: str = Query(description="DEX connector (e.g., 'meteora', 'raydium')"),
+    connector_name: str = Query(
+        description="DEX connector (e.g., 'meteora', 'raydium')"),
     network: str = Query(description="Network (e.g., 'mainnet-beta')"),
     accounts_service: AccountsService = Depends(get_accounts_service)
 ) -> List[Dict]:
@@ -278,12 +304,14 @@ async def list_pools(
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         pools = await accounts_service.gateway_client.get_pools(connector_name, network)
 
         if not pools:
-            raise HTTPException(status_code=400, detail=f"No pools found for {connector_name}/{network}")
+            raise HTTPException(
+                status_code=400, detail=f"No pools found for {connector_name}/{network}")
 
         # Normalize each pool
         normalized_pools = [normalize_gateway_response(pool) for pool in pools]
@@ -292,7 +320,8 @@ async def list_pools(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting pools: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting pools: {str(e)}")
 
 
 @router.post("/pools")
@@ -308,7 +337,8 @@ async def add_pool(
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         result = await accounts_service.gateway_client.add_pool(
             connector=pool_request.connector_name,
@@ -323,11 +353,13 @@ async def add_pool(
         )
 
         if result is None:
-            raise HTTPException(status_code=502, detail="Failed to add pool: Gateway returned no response")
+            raise HTTPException(
+                status_code=502, detail="Failed to add pool: Gateway returned no response")
 
         if "error" in result:
             status = result.get("status", 400)
-            raise HTTPException(status_code=status, detail=f"Failed to add pool: {result.get('error')}")
+            raise HTTPException(
+                status_code=status, detail=f"Failed to add pool: {result.get('error')}")
 
         trading_pair = f"{pool_request.base}-{pool_request.quote}"
         return {
@@ -338,14 +370,17 @@ async def add_pool(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error adding pool: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error adding pool: {str(e)}")
 
 
 @router.delete("/pools/{address}")
 async def delete_pool(
     address: str,
-    connector_name: str = Query(description="DEX connector (e.g., 'meteora', 'raydium', 'uniswap')"),
-    network: str = Query(description="Network name (e.g., 'mainnet-beta', 'mainnet')"),
+    connector_name: str = Query(
+        description="DEX connector (e.g., 'meteora', 'raydium', 'uniswap')"),
+    network: str = Query(
+        description="Network name (e.g., 'mainnet-beta', 'mainnet')"),
     pool_type: str = Query(description="Pool type (e.g., 'clmm', 'amm')"),
     accounts_service: AccountsService = Depends(get_accounts_service)
 ) -> Dict:
@@ -362,7 +397,8 @@ async def delete_pool(
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         result = await accounts_service.gateway_client.delete_pool(
             connector=connector_name,
@@ -372,10 +408,12 @@ async def delete_pool(
         )
 
         if result is None:
-            raise HTTPException(status_code=400, detail="Failed to delete pool - no response from Gateway")
+            raise HTTPException(
+                status_code=400, detail="Failed to delete pool - no response from Gateway")
 
         if "error" in result:
-            raise HTTPException(status_code=400, detail=f"Failed to delete pool: {result.get('error')}")
+            raise HTTPException(
+                status_code=400, detail=f"Failed to delete pool: {result.get('error')}")
 
         return {
             "success": True,
@@ -388,7 +426,8 @@ async def delete_pool(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting pool: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting pool: {str(e)}")
 
 
 # ============================================
@@ -405,7 +444,8 @@ async def list_networks(accounts_service: AccountsService = Depends(get_accounts
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         chains_result = await accounts_service.gateway_client.get_chains()
 
@@ -431,7 +471,8 @@ async def list_networks(accounts_service: AccountsService = Depends(get_accounts
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing networks: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error listing networks: {str(e)}")
 
 
 @router.get("/networks/{network_id}")
@@ -449,7 +490,8 @@ async def get_network_config(
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         result = await accounts_service.gateway_client.get_config(network_id)
         return normalize_gateway_response(result)
@@ -457,7 +499,8 @@ async def get_network_config(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting network config: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting network config: {str(e)}")
 
 
 @router.post("/networks/{network_id}")
@@ -479,18 +522,26 @@ async def update_network_config(
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         results = []
         for path, value in config_updates.items():
             # Convert snake_case to camelCase if needed
             camel_path = snake_to_camel(path) if '_' in path else path
-            result = await accounts_service.gateway_client.update_config(network_id, camel_path, value)
+            result = await accounts_service.gateway_client.update_config(
+                network_id,
+                camel_path,
+                value,
+            )
             results.append(result)
 
         return {
             "success": True,
-            "message": f"Updated {len(results)} config parameter(s) for {network_id}. Restart Gateway for changes to take effect.",
+            "message": (
+                f"Updated {len(results)} config parameter(s) for {network_id}. "
+                "Restart Gateway for changes to take effect."
+            ),
             "restart_required": True,
             "restart_endpoint": "POST /gateway/restart",
             "results": results
@@ -499,7 +550,8 @@ async def update_network_config(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating network config: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error updating network config: {str(e)}")
 
 
 @router.get("/networks/{network_id}/tokens")
@@ -519,12 +571,19 @@ async def get_network_tokens(
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         # Parse network_id into chain and network
         parts = network_id.split('-', 1)
         if len(parts) != 2:
-            raise HTTPException(status_code=400, detail=f"Invalid network_id format. Expected 'chain-network', got '{network_id}'")
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Invalid network_id format. Expected 'chain-network', "
+                    f"got '{network_id}'"
+                ),
+            )
 
         chain, network = parts
         result = await accounts_service.gateway_client.get_tokens(chain, network)
@@ -534,8 +593,10 @@ async def get_network_tokens(
             search_lower = search.lower()
             result["tokens"] = [
                 token for token in result["tokens"]
-                if search_lower in token.get("symbol", "").lower() or
-                   search_lower in token.get("name", "").lower()
+                if (
+                    search_lower in token.get("symbol", "").lower()
+                    or search_lower in token.get("name", "").lower()
+                )
             ]
 
         return result
@@ -543,7 +604,8 @@ async def get_network_tokens(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting network tokens: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting network tokens: {str(e)}")
 
 
 @router.post("/networks/{network_id}/tokens")
@@ -571,12 +633,19 @@ async def add_network_token(
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         # Parse network_id into chain and network
         parts = network_id.split('-', 1)
         if len(parts) != 2:
-            raise HTTPException(status_code=400, detail=f"Invalid network_id format. Expected 'chain-network', got '{network_id}'")
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Invalid network_id format. Expected 'chain-network', "
+                    f"got '{network_id}'"
+                ),
+            )
 
         chain, network = parts
 
@@ -593,7 +662,10 @@ async def add_network_token(
         )
 
         if "error" in result:
-            raise HTTPException(status_code=400, detail=f"Failed to add token: {result.get('error')}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to add token: {result.get('error')}",
+            )
 
         return {
             "success": True,
@@ -610,7 +682,8 @@ async def add_network_token(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error adding token: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error adding token: {str(e)}")
 
 
 @router.delete("/networks/{network_id}/tokens/{token_address}")
@@ -632,12 +705,19 @@ async def delete_network_token(
     """
     try:
         if not await accounts_service.gateway_client.ping():
-            raise HTTPException(status_code=503, detail="Gateway service is not available")
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
 
         # Parse network_id into chain and network
         parts = network_id.split('-', 1)
         if len(parts) != 2:
-            raise HTTPException(status_code=400, detail=f"Invalid network_id format. Expected 'chain-network', got '{network_id}'")
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Invalid network_id format. Expected 'chain-network', "
+                    f"got '{network_id}'"
+                ),
+            )
 
         chain, network = parts
 
@@ -648,7 +728,10 @@ async def delete_network_token(
         )
 
         if "error" in result:
-            raise HTTPException(status_code=400, detail=f"Failed to delete token: {result.get('error')}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to delete token: {result.get('error')}",
+            )
 
         return {
             "success": True,
@@ -662,4 +745,160 @@ async def delete_network_token(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting token: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting token: {str(e)}")
+
+
+# ============================================
+# Wallet Management
+# ============================================
+
+@router.post("/wallets/create")
+async def create_wallet(
+    request: CreateWalletRequest,
+    accounts_service: AccountsService = Depends(get_accounts_service)
+) -> Dict:
+    """
+    Create a new wallet in Gateway.
+
+    Args:
+        request: Contains chain and set_default flag
+
+    Returns:
+        Dict with address and chain of the created wallet.
+
+    Example: POST /gateway/wallets/create
+    {
+        "chain": "solana",
+        "set_default": true
+    }
+    """
+    try:
+        if not await accounts_service.gateway_client.ping():
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
+
+        result = await accounts_service.gateway_client.create_wallet(
+            chain=request.chain,
+            set_default=request.set_default
+        )
+
+        if result is None:
+            raise HTTPException(
+                status_code=502, detail="Failed to create wallet: Gateway returned no response")
+
+        if "error" in result:
+            raise HTTPException(
+                status_code=400, detail=f"Failed to create wallet: {result.get('error')}")
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error creating wallet: {str(e)}")
+
+
+@router.post("/wallets/show-private-key")
+async def show_private_key(
+    request: ShowPrivateKeyRequest,
+    accounts_service: AccountsService = Depends(get_accounts_service)
+) -> Dict:
+    """
+    Show private key for a wallet.
+
+    WARNING: This endpoint exposes sensitive information. Use with caution.
+
+    Args:
+        request: Contains chain, address, and passphrase
+
+    Returns:
+        Dict with privateKey field.
+
+    Example: POST /gateway/wallets/show-private-key
+    {
+        "chain": "solana",
+        "address": "<wallet-address>",
+        "passphrase": "<gateway-passphrase>"
+    }
+    """
+    try:
+        if not await accounts_service.gateway_client.ping():
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
+
+        result = await accounts_service.gateway_client.show_private_key(
+            chain=request.chain,
+            address=request.address,
+            passphrase=request.passphrase
+        )
+
+        if result is None:
+            raise HTTPException(
+                status_code=502, detail="Failed to retrieve private key: Gateway returned no response")
+
+        if "error" in result:
+            raise HTTPException(
+                status_code=400, detail=f"Failed to retrieve private key: {result.get('error')}")
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error retrieving private key: {str(e)}")
+
+
+@router.post("/wallets/send")
+async def send_transaction(
+    request: SendTransactionRequest,
+    accounts_service: AccountsService = Depends(get_accounts_service)
+) -> Dict:
+    """
+    Send a native token transaction.
+
+    Args:
+        request: Contains chain, network, sender address, recipient address, and amount
+
+    Returns:
+        Dict with transaction signature/hash.
+
+    Example: POST /gateway/wallets/send
+    {
+        "chain": "solana",
+        "network": "mainnet-beta",
+        "address": "<sender-address>",
+        "to_address": "<recipient-address>",
+        "amount": "0.001"
+    }
+    """
+    try:
+        if not await accounts_service.gateway_client.ping():
+            raise HTTPException(
+                status_code=503, detail="Gateway service is not available")
+
+        result = await accounts_service.gateway_client.send_transaction(
+            chain=request.chain,
+            network=request.network,
+            address=request.address,
+            to_address=request.to_address,
+            amount=request.amount
+        )
+
+        if result is None:
+            raise HTTPException(
+                status_code=502, detail="Failed to send transaction: Gateway returned no response")
+
+        if "error" in result:
+            raise HTTPException(
+                status_code=400, detail=f"Failed to send transaction: {result.get('error')}")
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error sending transaction: {str(e)}")
