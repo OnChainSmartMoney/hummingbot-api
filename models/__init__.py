@@ -57,7 +57,61 @@ from .connectors import (
 )
 
 # Controller models
-from .controllers import Controller, ControllerConfig, ControllerConfigResponse, ControllerResponse, ControllerType
+from .controllers import (
+    ControllerType,
+    Controller,
+    ControllerResponse,
+    ControllerConfig,
+    ControllerConfigResponse,
+)
+
+# Script models
+from .scripts import (
+    Script,
+    ScriptResponse,
+    ScriptConfig,
+    ScriptConfigResponse,
+)
+
+
+# Market data models
+from .market_data import (
+    CandleData,
+    CandlesResponse,
+    ActiveFeedInfo,
+    ActiveFeedsResponse,
+    MarketDataSettings,
+    TradingRulesResponse,
+    SupportedOrderTypesResponse,
+    # New enhanced market data models
+    PriceRequest,
+    PriceData,
+    PricesResponse,
+    FundingInfoRequest,
+    FundingInfoResponse,
+    OrderBookRequest,
+    OrderBookLevel,
+    OrderBookResponse,
+    OrderBookQueryRequest,
+    VolumeForPriceRequest,
+    PriceForVolumeRequest,
+    QuoteVolumeForPriceRequest,
+    PriceForQuoteVolumeRequest,
+    VWAPForVolumeRequest,
+    OrderBookQueryResult,
+    # Trading pair management models
+    AddTradingPairRequest,
+    RemoveTradingPairRequest,
+    TradingPairResponse,
+)
+
+# Account models
+from .accounts import (
+    LeverageRequest,
+    PositionModeRequest,
+    CredentialRequest,
+)
+
 
 # Docker models
 from .docker import DockerImage
@@ -183,6 +237,19 @@ from .rate_oracle import (
     SingleRateResponse,
 )
 
+# Executor models
+from .executors import (
+    CreateExecutorRequest,
+    CreateExecutorResponse,
+    StopExecutorRequest,
+    StopExecutorResponse,
+    DeleteExecutorResponse,
+    ExecutorFilterRequest,
+    ExecutorResponse,
+    ExecutorDetailResponse,
+    ExecutorsSummaryResponse,
+)
+
 __all__ = [
     # Bot orchestration models
     "BotAction",
@@ -253,6 +320,10 @@ __all__ = [
     "PriceForQuoteVolumeRequest",
     "VWAPForVolumeRequest",
     "OrderBookQueryResult",
+    # Trading pair management models
+    "AddTradingPairRequest",
+    "RemoveTradingPairRequest",
+    "TradingPairResponse",
     # Account models
     "LeverageRequest",
     "PositionModeRequest",
@@ -341,4 +412,14 @@ __all__ = [
     "RateRequest",
     "RateResponse",
     "SingleRateResponse",
+    # Executor models
+    "CreateExecutorRequest",
+    "CreateExecutorResponse",
+    "StopExecutorRequest",
+    "StopExecutorResponse",
+    "DeleteExecutorResponse",
+    "ExecutorFilterRequest",
+    "ExecutorResponse",
+    "ExecutorDetailResponse",
+    "ExecutorsSummaryResponse",
 ]
