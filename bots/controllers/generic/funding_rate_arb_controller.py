@@ -110,6 +110,11 @@ class ExitConfig(BaseModel):
     liquidation_market_close_pct: Decimal
 
 
+class TestConfig(BaseModel):
+    profitability_always_positive: bool
+    profitability_always_negative: bool
+
+
 class FundingRateArbControllerConfig(ControllerConfigBase):
     controller_name: str = "funding_rate_arb_controller"
     controller_type: str = "generic"
@@ -118,6 +123,7 @@ class FundingRateArbControllerConfig(ControllerConfigBase):
     pair: PairConfig
     execution: ExecutionConfig
     exit: ExitConfig
+    test: TestConfig
 
     @model_validator(mode="after")
     def _validate_legs_and_pair(self):
@@ -263,6 +269,8 @@ class FundingRateArbController(ControllerBase):
             closing_non_profitable_wait_sec=self.config.exit.closing_non_profitable_wait_sec,
             liquidation_limit_close_pct=self.config.exit.liquidation_limit_close_pct,
             liquidation_market_close_pct=self.config.exit.liquidation_market_close_pct,
+            profitability_always_positive=self.config.test.profitability_always_positive,
+            profitability_always_negative=self.config.test.profitability_always_negative,
         )
 
         actions.append(
