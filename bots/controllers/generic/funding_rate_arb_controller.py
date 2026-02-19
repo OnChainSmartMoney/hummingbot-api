@@ -108,6 +108,9 @@ class ExitConfig(BaseModel):
     closing_non_profitable_wait_sec: int
     liquidation_limit_close_pct: Decimal
     liquidation_market_close_pct: Decimal
+    maximum_price_movement_related_to_entry_price_pct: Decimal
+    timed_window_price_movement_sec: int
+    maximum_timed_window_price_movement_pct: Decimal
 
 
 class TestConfig(BaseModel):
@@ -269,6 +272,9 @@ class FundingRateArbController(ControllerBase):
             closing_non_profitable_wait_sec=self.config.exit.closing_non_profitable_wait_sec,
             liquidation_limit_close_pct=self.config.exit.liquidation_limit_close_pct,
             liquidation_market_close_pct=self.config.exit.liquidation_market_close_pct,
+            maximum_price_movement_related_to_entry_price_pct=self.config.exit.maximum_price_movement_related_to_entry_price_pct,
+            timed_window_price_movement_sec=self.config.exit.timed_window_price_movement_sec,
+            maximum_timed_window_price_movement_pct=self.config.exit.maximum_timed_window_price_movement_pct,
             profitability_always_positive=self.config.test.profitability_always_positive,
             profitability_always_negative=self.config.test.profitability_always_negative,
         )
