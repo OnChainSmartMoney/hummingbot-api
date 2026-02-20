@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import pandas as pd
 from hummingbot.client.ui.interface_utils import format_df_for_printout
@@ -102,15 +102,57 @@ class ExecutionConfig(BaseModel):
 
 
 class ExitConfig(BaseModel):
+    class FundingExitRuleConfig(BaseModel):
+        name: Optional[str] = None
+        apr_threshold_pct: Decimal
+        hold_sec: int
+        close_type: Literal["soft", "hard", "critical"]
+
+        @field_validator("name", mode="before")
+        @classmethod
+        def _normalize_name(cls, value: Optional[str]) -> Optional[str]:
+            if value is None:
+                return None
+            normalized = str(value).strip()
+            return normalized if normalized else None
+
+        @field_validator("hold_sec", mode="before")
+        @classmethod
+        def _validate_hold_sec(cls, value: int) -> int:
+            hold_sec = int(value)
+            if hold_sec <= 0:
+                raise ValueError(
+                    "exit.funding_exit_rules[].hold_sec must be > 0.")
+            return hold_sec
+
+        @field_validator("close_type", mode="before")
+        @classmethod
+        def _normalize_close_type(cls, value: str) -> str:
+            close_type = str(value).strip().lower()
+            if close_type not in {"soft", "hard", "critical"}:
+                raise ValueError(
+                    "exit.funding_exit_rules[].close_type must be one of: soft, hard, critical."
+                )
+            return close_type
+
     funding_profitability_interval_hours: int
-    fr_spread_below_pct: Optional[Decimal]
-    hold_below_sec: int
+    funding_exit_rules: List[FundingExitRuleConfig]
     closing_non_profitable_wait_sec: int
     liquidation_limit_close_pct: Decimal
     liquidation_market_close_pct: Decimal
     maximum_price_movement_related_to_entry_price_pct: Decimal
     timed_window_price_movement_sec: int
     maximum_timed_window_price_movement_pct: Decimal
+
+    @field_validator("funding_exit_rules", mode="after")
+    @classmethod
+    def _validate_funding_exit_rules(
+        cls, value: List[FundingExitRuleConfig]
+    ) -> List[FundingExitRuleConfig]:
+        if len(value) == 0:
+            raise ValueError(
+                "exit.funding_exit_rules must contain at least one rule.")
+        return value
 
 
 class TestConfig(BaseModel):
@@ -264,8 +306,15 @@ class FundingRateArbController(ControllerBase):
             risk_buffer_pct=self.config.execution.maker.risk_buffer_pct,
             maker_ttl_sec=self.config.execution.maker.ttl_sec,
             hedge_min_notional_usd=self.config.execution.hedge.min_hedge_notional_usd,
-            exit_funding_diff_pct_threshold=self.config.exit.fr_spread_below_pct,
-            exit_hold_below_sec=self.config.exit.hold_below_sec,
+            funding_exit_rules=[
+                {
+                    "name": rule.name or f"rule_{idx}",
+                    "apr_threshold_pct": rule.apr_threshold_pct,
+                    "hold_sec": rule.hold_sec,
+                    "close_type": rule.close_type,
+                }
+                for idx, rule in enumerate(self.config.exit.funding_exit_rules)
+            ],
             funding_profitability_interval_hours=self.config.exit.funding_profitability_interval_hours,
             non_profitable_wait_sec=self.config.execution.non_profitable_wait_sec,
             fill_timeout_sec=self.config.execution.fill_timeout_sec,
