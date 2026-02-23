@@ -6,6 +6,7 @@ Models are organized by functional domain to match the API structure.
 """
 
 # Account models
+# Account models
 from .accounts import CredentialRequest, LeverageRequest, PositionModeRequest
 
 # Archived bots models
@@ -57,64 +58,22 @@ from .connectors import (
 )
 
 # Controller models
-from .controllers import (
-    ControllerType,
-    Controller,
-    ControllerResponse,
-    ControllerConfig,
-    ControllerConfigResponse,
-)
-
-# Script models
-from .scripts import (
-    Script,
-    ScriptResponse,
-    ScriptConfig,
-    ScriptConfigResponse,
-)
-
-
-# Market data models
-from .market_data import (
-    CandleData,
-    CandlesResponse,
-    ActiveFeedInfo,
-    ActiveFeedsResponse,
-    MarketDataSettings,
-    TradingRulesResponse,
-    SupportedOrderTypesResponse,
-    # New enhanced market data models
-    PriceRequest,
-    PriceData,
-    PricesResponse,
-    FundingInfoRequest,
-    FundingInfoResponse,
-    OrderBookRequest,
-    OrderBookLevel,
-    OrderBookResponse,
-    OrderBookQueryRequest,
-    VolumeForPriceRequest,
-    PriceForVolumeRequest,
-    QuoteVolumeForPriceRequest,
-    PriceForQuoteVolumeRequest,
-    VWAPForVolumeRequest,
-    OrderBookQueryResult,
-    # Trading pair management models
-    AddTradingPairRequest,
-    RemoveTradingPairRequest,
-    TradingPairResponse,
-)
-
-# Account models
-from .accounts import (
-    LeverageRequest,
-    PositionModeRequest,
-    CredentialRequest,
-)
-
+from .controllers import Controller, ControllerConfig, ControllerConfigResponse, ControllerResponse, ControllerType
 
 # Docker models
 from .docker import DockerImage
+
+# Executor models
+from .executors import (
+    CreateExecutorRequest,
+    CreateExecutorResponse,
+    ExecutorDetailResponse,
+    ExecutorFilterRequest,
+    ExecutorResponse,
+    ExecutorsSummaryResponse,
+    StopExecutorRequest,
+    StopExecutorResponse,
+)
 
 # Gateway models (consolidated)
 from .gateway import (
@@ -124,12 +83,6 @@ from .gateway import (
     GatewayBalanceRequest,
     GatewayConfig,
     GatewayStatus,
-    << << << < HEAD
-    == == == =
-    CreateWalletRequest,
-    ShowPrivateKeyRequest,
-    SendTransactionRequest,
-    >>>>>> > 4242b95(Merge branch 'main' into fra-strategy)
     GatewayWalletCredential,
     GatewayWalletInfo,
     SendTransactionRequest,
@@ -163,9 +116,11 @@ from .gateway_trading import (  # Swap models; CLMM models; Pool info models; Po
 )
 
 # Market data models
-from .market_data import (  # New enhanced market data models
+# Market data models
+from .market_data import (  # New enhanced market data models; Trading pair management models
     ActiveFeedInfo,
     ActiveFeedsResponse,
+    AddTradingPairRequest,
     CandleData,
     CandlesResponse,
     FundingInfoRequest,
@@ -182,7 +137,9 @@ from .market_data import (  # New enhanced market data models
     PriceRequest,
     PricesResponse,
     QuoteVolumeForPriceRequest,
+    RemoveTradingPairRequest,
     SupportedOrderTypesResponse,
+    TradingPairResponse,
     TradingRulesResponse,
     VolumeForPriceRequest,
     VWAPForVolumeRequest,
@@ -205,6 +162,21 @@ from .portfolio import (
     TokenDistribution,
 )
 
+# Rate Oracle models
+from .rate_oracle import (
+    GlobalTokenConfig,
+    RateOracleConfig,
+    RateOracleConfigResponse,
+    RateOracleConfigUpdateRequest,
+    RateOracleConfigUpdateResponse,
+    RateOracleSourceConfig,
+    RateOracleSourceEnum,
+    RateRequest,
+    RateResponse,
+    SingleRateResponse,
+)
+
+# Script models
 # Script models
 from .scripts import Script, ScriptConfig, ScriptConfigResponse, ScriptResponse
 
@@ -227,32 +199,6 @@ from .trading import (
     TradeRequest,
     TradeResponse,
     TradingRulesInfo,
-)
-
-# Rate Oracle models
-from .rate_oracle import (
-    RateOracleSourceEnum,
-    GlobalTokenConfig,
-    RateOracleSourceConfig,
-    RateOracleConfig,
-    RateOracleConfigResponse,
-    RateOracleConfigUpdateRequest,
-    RateOracleConfigUpdateResponse,
-    RateRequest,
-    RateResponse,
-    SingleRateResponse,
-)
-
-# Executor models
-from .executors import (
-    CreateExecutorRequest,
-    CreateExecutorResponse,
-    StopExecutorRequest,
-    StopExecutorResponse,
-    ExecutorFilterRequest,
-    ExecutorResponse,
-    ExecutorDetailResponse,
-    ExecutorsSummaryResponse,
 )
 
 __all__ = [
@@ -406,7 +352,6 @@ __all__ = [
     "TradeHistoryResponse",
     "OrderHistoryResponse",
     "ExecutorsResponse",
-    << << << < HEAD
     # Rate Oracle models
     "RateOracleSourceEnum",
     "GlobalTokenConfig",
