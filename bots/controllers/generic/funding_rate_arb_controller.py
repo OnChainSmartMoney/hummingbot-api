@@ -5,14 +5,13 @@ from decimal import Decimal
 from typing import Any, Dict, List, Literal, Optional
 
 import pandas as pd
-from pydantic import BaseModel, Field, field_validator, model_validator
-
 from hummingbot.client.ui.interface_utils import format_df_for_printout
 from hummingbot.core.data_type.common import MarketDict, PriceType, TradeType
 from hummingbot.strategy_v2.controllers.controller_base import ControllerBase, ControllerConfigBase
 from hummingbot.strategy_v2.executors.data_types import ConnectorPair
 from hummingbot.strategy_v2.executors.maker_hedge_single_executor.data_types import MakerHedgeSingleExecutorConfig
 from hummingbot.strategy_v2.models.executor_actions import CreateExecutorAction, ExecutorAction
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class LegConfig(BaseModel):
@@ -219,12 +218,6 @@ class FundingRateArbControllerConfig(ControllerConfigBase):
 
 
 class FundingRateArbController(ControllerBase):
-    FUNDING_INTERVAL_FALLBACKS: Dict[str, int] = {
-        "bybit_perpetual": 60 * 60 * 8,
-        "hyperliquid_perpetual": 60 * 60 * 1,
-        "okx_perpetual": 60 * 60 * 8,
-    }
-
     def __init__(self, config: FundingRateArbControllerConfig, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
         self.config: FundingRateArbControllerConfig
