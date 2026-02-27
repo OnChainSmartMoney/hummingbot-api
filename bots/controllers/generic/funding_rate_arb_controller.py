@@ -407,7 +407,8 @@ class FundingRateArbController(ControllerBase):
                          funding_pnl_maker + funding_pnl_hedge)
             )
 
-            oriented_diff = info.get("funding_oriented_diff_pct")
+            apr_oriented_diff_funding_pct = info.get(
+                "apr_oriented_diff_funding_pct")
 
             min_to_funding_entry = info.get("minutes_to_funding_entry")
             min_to_funding_hedge = info.get("minutes_to_funding_hedge")
@@ -437,8 +438,8 @@ class FundingRateArbController(ControllerBase):
                     "Funding pnl maker": _decimal_to_str(funding_pnl_maker),
                     "Funding pnl hedge": _decimal_to_str(funding_pnl_hedge),
                     "Funding pnl net": _decimal_to_str(funding_pnl_net),
-                    "Funding diff %": _decimal_to_str(oriented_diff)
-                    if oriented_diff is not None
+                    "Funding diff %": _decimal_to_str(apr_oriented_diff_funding_pct)
+                    if apr_oriented_diff_funding_pct is not None
                     else "-",
                 }
             )
