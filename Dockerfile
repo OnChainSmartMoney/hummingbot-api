@@ -9,8 +9,11 @@ RUN apt-get update && \
 # Set working directory
 WORKDIR /build
 
+# Copy hummingbot source so environment.yml can install it as /hummingbot
+COPY hummingbot /hummingbot
+
 # Copy only the environment file first (for better layer caching)
-COPY environment.yml .
+COPY hummingbot-api/environment.yml .
 
 # Create the conda environment
 RUN conda env create -f environment.yml && \
@@ -33,14 +36,14 @@ COPY --from=builder /opt/conda/envs/hummingbot-api /opt/conda/envs/hummingbot-ap
 WORKDIR /hummingbot-api
 
 # Copy only necessary application files
-COPY main.py config.py deps.py ./
-COPY models ./models
-COPY routers ./routers
-COPY services ./services
-COPY utils ./utils
-COPY database ./database
-COPY bots/controllers ./bots/controllers
-COPY bots/scripts ./bots/scripts
+COPY hummingbot-api/main.py hummingbot-api/config.py hummingbot-api/deps.py ./
+COPY hummingbot-api/models ./models
+COPY hummingbot-api/routers ./routers
+COPY hummingbot-api/services ./services
+COPY hummingbot-api/utils ./utils
+COPY hummingbot-api/database ./database
+COPY hummingbot-api/bots/controllers ./bots/controllers
+COPY hummingbot-api/bots/scripts ./bots/scripts
 
 # Create necessary directories
 RUN mkdir -p bots/instances bots/conf bots/credentials bots/data bots/archived
