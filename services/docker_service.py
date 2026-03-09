@@ -13,6 +13,7 @@ from docker.errors import DockerException
 from docker.types import LogConfig
 
 from config import settings
+from proxy_config import PROXIES
 from models import V2ScriptDeployment
 from utils.file_system import fs_util
 
@@ -28,7 +29,9 @@ class DockerService:
         self._pull_status: Dict[str, Dict] = {}
         self._cleanup_thread = None
         self._stop_cleanup = threading.Event()
-        
+        self._proxy_list: list[str] = PROXIES
+        self._proxy_index: int = 0
+
         try:
             self.client = docker.from_env()
             # Start background cleanup thread
@@ -257,6 +260,12 @@ class DockerService:
         if config.headless:
             environment["HEADLESS"] = "true"
 
+        proxy = self._next_proxy()
+        if proxy:
+            environment["HTTP_PROXY"] = proxy
+            environment["HTTPS_PROXY"] = proxy
+            logger.info(f"Assigning proxy {proxy} to instance {instance_name}")
+
         log_config = LogConfig(
             type="json-file",
             config={
@@ -278,6 +287,14 @@ class DockerService:
             return {"success": True, "message": f"Instance {instance_name} created successfully."}
         except docker.errors.DockerException as e:
             return {"success": False, "message": str(e)}
+
+    def _next_proxy(self) -> str | None:
+        """Return the next proxy URL in round-robin order, or None if no proxies configured."""
+        if not self._proxy_list:
+            return None
+        proxy = self._proxy_list[self._proxy_index % len(self._proxy_list)]
+        self._proxy_index += 1
+        return proxy
 
     def _start_cleanup_thread(self):
         """Start the background cleanup thread"""
