@@ -36,7 +36,7 @@ COPY --from=builder /opt/conda/envs/hummingbot-api /opt/conda/envs/hummingbot-ap
 WORKDIR /hummingbot-api
 
 # Copy only necessary application files
-COPY hummingbot-api/main.py hummingbot-api/config.py hummingbot-api/deps.py ./
+COPY hummingbot-api/main.py hummingbot-api/config.py hummingbot-api/deps.py hummingbot-api/proxy_config.py ./
 COPY hummingbot-api/models ./models
 COPY hummingbot-api/routers ./routers
 COPY hummingbot-api/services ./services
