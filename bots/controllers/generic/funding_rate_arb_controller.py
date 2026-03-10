@@ -70,7 +70,6 @@ class PairConfig(BaseModel):
     base_asset: str
     total_notional_usd: Decimal
     max_notional_per_part: Decimal
-    min_notional_per_part: Decimal
 
     @field_validator("base_asset", mode="before")
     @classmethod
@@ -297,7 +296,6 @@ class FundingRateArbController(ControllerBase):
             leverage=self.config.execution.leverage,
             pair_notional_usd_cap=pair_cap_usd,
             per_order_max_notional_usd=pair_config.max_notional_per_part,
-            per_order_min_notional_usd=pair_config.min_notional_per_part,
             maker_price_offset_pct=self.config.execution.maker.price_offset_pct,
             risk_buffer_pct=self.config.execution.maker.risk_buffer_pct,
             maker_ttl_sec=self.config.execution.maker.ttl_sec,
