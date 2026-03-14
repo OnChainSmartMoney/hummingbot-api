@@ -2,6 +2,8 @@ import secrets
 from contextlib import asynccontextmanager
 from typing import Annotated
 from urllib.parse import urlparse
+import os
+from logging.handlers import RotatingFileHandler
 
 import logfire
 import logging
@@ -70,9 +72,15 @@ from config import settings
 
 
 # Set up logging configuration
+os.makedirs("logs", exist_ok=True)
+_log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+_file_handler = RotatingFileHandler("logs/app.log", maxBytes=10 * 1024 * 1024, backupCount=5)
+_file_handler.setFormatter(_log_formatter)
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[_file_handler],
 )
 
 # Enable debug logging for MQTT manager
