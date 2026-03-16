@@ -144,6 +144,7 @@ class ExitConfig(BaseModel):
     maximum_timed_window_price_movement_pct: Decimal
     sl_order_price_buffer_pct_from_liq: Decimal
     tp_order_price_buffer_pct_from_sl: Decimal
+    stop_position_verify_timeout_sec: int
 
     @field_validator("funding_exit_rules", mode="after")
     @classmethod
@@ -318,6 +319,7 @@ class FundingRateArbController(ControllerBase):
             maximum_price_movement_related_to_entry_price_pct=self.config.exit.maximum_price_movement_related_to_entry_price_pct,
             sl_order_price_buffer_pct_from_liq=self.config.exit.sl_order_price_buffer_pct_from_liq,
             tp_order_price_buffer_pct_from_sl=self.config.exit.tp_order_price_buffer_pct_from_sl,
+            stop_position_verify_timeout_sec=self.config.exit.stop_position_verify_timeout_sec,
             timed_window_price_movement_sec=self.config.exit.timed_window_price_movement_sec,
             maximum_timed_window_price_movement_pct=self.config.exit.maximum_timed_window_price_movement_pct,
             profitability_always_positive=self.config.test.profitability_always_positive,
