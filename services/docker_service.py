@@ -30,7 +30,6 @@ class DockerService:
         self._cleanup_thread = None
         self._stop_cleanup = threading.Event()
         self._proxy_list: list[str] = PROXIES
-        self._proxy_index: int = 0
 
         try:
             self.client = docker.from_env()
@@ -291,12 +290,22 @@ class DockerService:
             return {"success": False, "message": str(e)}
 
     def _next_proxy(self) -> str | None:
-        """Return the next proxy URL in round-robin order, or None if no proxies configured."""
+        """Return the proxy URL with the lowest current usage among running containers."""
         if not self._proxy_list:
             return None
-        proxy = self._proxy_list[self._proxy_index % len(self._proxy_list)]
-        self._proxy_index += 1
-        return proxy
+        usage: dict[str, int] = {p: 0 for p in self._proxy_list}
+        try:
+            for container in self.client.containers.list(filters={"status": "running"}):
+                env = container.attrs.get("Config", {}).get("Env") or []
+                for var in env:
+                    if var.startswith("HTTP_PROXY="):
+                        proxy_val = var[len("HTTP_PROXY="):]
+                        if proxy_val in usage:
+                            usage[proxy_val] += 1
+                        break
+        except Exception:
+            pass
+        return min(usage, key=usage.get)
 
     def _start_cleanup_thread(self):
         """Start the background cleanup thread"""
