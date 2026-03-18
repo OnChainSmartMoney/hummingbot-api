@@ -88,15 +88,11 @@ class MakerConfig(BaseModel):
     ttl_sec: int
 
 
-class HedgeConfig(BaseModel):
-    min_hedge_notional_usd: Decimal
-
-
 class ExecutionConfig(BaseModel):
     leverage: Decimal
     maker: MakerConfig
-    hedge: HedgeConfig
     non_profitable_wait_sec: int
+    min_profitability_duration_sec: int
     fill_timeout_sec: int
 
 
@@ -300,7 +296,6 @@ class FundingRateArbController(ControllerBase):
             maker_price_offset_pct=self.config.execution.maker.price_offset_pct,
             risk_buffer_pct=self.config.execution.maker.risk_buffer_pct,
             maker_ttl_sec=self.config.execution.maker.ttl_sec,
-            hedge_min_notional_usd=self.config.execution.hedge.min_hedge_notional_usd,
             funding_exit_rules=[
                 {
                     "name": rule.name or f"rule_{idx}",
@@ -312,6 +307,7 @@ class FundingRateArbController(ControllerBase):
             ],
             funding_profitability_interval_hours=self.config.exit.funding_profitability_interval_hours,
             non_profitable_wait_sec=self.config.execution.non_profitable_wait_sec,
+            min_profitability_duration_sec=self.config.execution.min_profitability_duration_sec,
             fill_timeout_sec=self.config.execution.fill_timeout_sec,
             closing_non_profitable_wait_sec=self.config.exit.closing_non_profitable_wait_sec,
             liquidation_limit_close_pct=self.config.exit.liquidation_limit_close_pct,
