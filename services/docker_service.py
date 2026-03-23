@@ -305,7 +305,10 @@ class DockerService:
                         break
         except Exception:
             pass
-        return min(usage, key=usage.get)
+        selected = min(usage, key=usage.get)
+        usage_summary = ", ".join(f"{p}: {c}" for p, c in sorted(usage.items(), key=lambda x: x[1]))
+        logger.info(f"Proxy usage counts — {usage_summary} | selected: {selected}")
+        return selected
 
     def _start_cleanup_thread(self):
         """Start the background cleanup thread"""
