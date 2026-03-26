@@ -132,6 +132,8 @@ class ExitConfig(BaseModel):
 
     funding_profitability_interval_hours: int
     funding_exit_rules: List[FundingExitRuleConfig]
+    pre_funding_window_minutes: int = 30
+    funding_time_diff_threshold_minutes: int = 20
     closing_non_profitable_wait_sec: int
     liquidation_limit_close_pct: Decimal
     liquidation_market_close_pct: Decimal
@@ -306,6 +308,8 @@ class FundingRateArbController(ControllerBase):
                 for idx, rule in enumerate(self.config.exit.funding_exit_rules)
             ],
             funding_profitability_interval_hours=self.config.exit.funding_profitability_interval_hours,
+            pre_funding_window_minutes=self.config.exit.pre_funding_window_minutes,
+            funding_time_diff_threshold_minutes=self.config.exit.funding_time_diff_threshold_minutes,
             non_profitable_wait_sec=self.config.execution.non_profitable_wait_sec,
             min_profitability_duration_sec=self.config.execution.min_profitability_duration_sec,
             fill_timeout_sec=self.config.execution.fill_timeout_sec,
