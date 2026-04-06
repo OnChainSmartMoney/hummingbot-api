@@ -24,11 +24,9 @@ class LegConfig(BaseModel):
     @classmethod
     def _validate_role(cls, value: str) -> str:
         if not isinstance(value, str):
-            raise ValueError(
-                "Each leg role must be either 'maker' or 'hedge'.")
+            raise ValueError("Each leg role must be either 'maker' or 'hedge'.")
         if value not in {"maker", "hedge"}:
-            raise ValueError(
-                "Each leg role must be either 'maker' or 'hedge'.")
+            raise ValueError("Each leg role must be either 'maker' or 'hedge'.")
         return value
 
     @field_validator("connector", mode="before")
@@ -94,6 +92,7 @@ class ExecutionConfig(BaseModel):
     non_profitable_wait_sec: int
     min_profitability_duration_sec: int
     fill_timeout_sec: int
+    profitability_funding_interval_hours: int
 
 
 class ExitConfig(BaseModel):
@@ -116,8 +115,7 @@ class ExitConfig(BaseModel):
         def _validate_hold_sec(cls, value: int) -> int:
             hold_sec = int(value)
             if hold_sec <= 0:
-                raise ValueError(
-                    "exit.funding_exit_rules[].hold_sec must be > 0.")
+                raise ValueError("exit.funding_exit_rules[].hold_sec must be > 0.")
             return hold_sec
 
         @field_validator("close_type", mode="before")
@@ -150,8 +148,7 @@ class ExitConfig(BaseModel):
         cls, value: List[FundingExitRuleConfig]
     ) -> List[FundingExitRuleConfig]:
         if len(value) == 0:
-            raise ValueError(
-                "exit.funding_exit_rules must contain at least one rule.")
+            raise ValueError("exit.funding_exit_rules must contain at least one rule.")
         return value
 
 
@@ -181,13 +178,11 @@ class FundingRateArbControllerConfig(ControllerConfigBase):
             )
 
         if len(legs) != 2:
-            raise ValueError(
-                "Exactly two legs (maker and hedge) must be defined.")
+            raise ValueError("Exactly two legs (maker and hedge) must be defined.")
 
         roles = [leg.role for leg in legs]
         if sorted(roles) != ["hedge", "maker"]:
-            raise ValueError(
-                "Leg roles must include one 'maker' and one 'hedge'.")
+            raise ValueError("Leg roles must include one 'maker' and one 'hedge'.")
 
         connectors = [leg.connector for leg in legs]
         if len(set(connectors)) != 2:
@@ -210,10 +205,8 @@ class FundingRateArbControllerConfig(ControllerConfigBase):
     def update_markets(self, markets: MarketDict) -> MarketDict:
         maker_leg = self.maker_leg
         hedge_leg = self.hedge_leg
-        markets.add_or_update(maker_leg.connector,
-                              self.leg_trading_pair(maker_leg))
-        markets.add_or_update(hedge_leg.connector,
-                              self.leg_trading_pair(hedge_leg))
+        markets.add_or_update(maker_leg.connector, self.leg_trading_pair(maker_leg))
+        markets.add_or_update(hedge_leg.connector, self.leg_trading_pair(hedge_leg))
         return markets
 
 
@@ -313,6 +306,7 @@ class FundingRateArbController(ControllerBase):
             non_profitable_wait_sec=self.config.execution.non_profitable_wait_sec,
             min_profitability_duration_sec=self.config.execution.min_profitability_duration_sec,
             fill_timeout_sec=self.config.execution.fill_timeout_sec,
+            profitability_funding_interval_hours=self.config.execution.profitability_funding_interval_hours,
             closing_non_profitable_wait_sec=self.config.exit.closing_non_profitable_wait_sec,
             liquidation_limit_close_pct=self.config.exit.liquidation_limit_close_pct,
             liquidation_market_close_pct=self.config.exit.liquidation_market_close_pct,
@@ -393,26 +387,19 @@ class FundingRateArbController(ControllerBase):
             hedge_tp = hedge_market.trading_pair
 
             maker_pos = _to_decimal(info.get("maker_position_base", "0"))
-            maker_pos_quote = _to_decimal(
-                info.get("maker_position_quote", "0"))
+            maker_pos_quote = _to_decimal(info.get("maker_position_quote", "0"))
             hedge_pos = _to_decimal(info.get("hedge_position_base", "0"))
-            maker_unrealized_pnl = _to_decimal(
-                info.get("maker_unrealized_pnl"))
-            hedge_unrealized_pnl = _to_decimal(
-                info.get("hedge_unrealized_pnl"))
+            maker_unrealized_pnl = _to_decimal(info.get("maker_unrealized_pnl"))
+            hedge_unrealized_pnl = _to_decimal(info.get("hedge_unrealized_pnl"))
             funding_pnl_maker = _to_decimal(
-                info.get("funding_pnl_quote_maker",
-                         info.get("funding_pnl_quote", 0))
+                info.get("funding_pnl_quote_maker", info.get("funding_pnl_quote", 0))
             )
-            funding_pnl_hedge = _to_decimal(
-                info.get("funding_pnl_quote_hedge", 0))
+            funding_pnl_hedge = _to_decimal(info.get("funding_pnl_quote_hedge", 0))
             funding_pnl_net = _to_decimal(
-                info.get("funding_pnl_quote_net",
-                         funding_pnl_maker + funding_pnl_hedge)
+                info.get("funding_pnl_quote_net", funding_pnl_maker + funding_pnl_hedge)
             )
 
-            apr_oriented_diff_funding_pct = info.get(
-                "apr_oriented_diff_funding_pct")
+            apr_oriented_diff_funding_pct = info.get("apr_oriented_diff_funding_pct")
 
             min_to_funding_entry = info.get("minutes_to_funding_entry")
             min_to_funding_hedge = info.get("minutes_to_funding_hedge")
@@ -423,10 +410,8 @@ class FundingRateArbController(ControllerBase):
             last_diff_pct_to_liquidation_hedge = info.get(
                 "last_diff_pct_to_liquidation_hedge"
             )
-            last_liquidation_price_maker = info.get(
-                "last_liquidation_price_maker")
-            last_liquidation_price_hedge = info.get(
-                "last_liquidation_price_hedge")
+            last_liquidation_price_maker = info.get("last_liquidation_price_maker")
+            last_liquidation_price_hedge = info.get("last_liquidation_price_hedge")
 
             exec_rows.append(
                 {
@@ -523,8 +508,7 @@ class FundingRateArbController(ControllerBase):
             orders_df = pd.DataFrame(order_rows)
             outputs.append(
                 "Open orders:\n"
-                + format_df_for_printout(orders_df,
-                                         table_format="psql", index=False)
+                + format_df_for_printout(orders_df, table_format="psql", index=False)
             )
 
         return outputs
@@ -554,6 +538,5 @@ class FundingRateArbController(ControllerBase):
             )
             return active_executor_ids
         except Exception as e:
-            self.logger().error(
-                f"[Manual] Error in custom_command: {e}", exc_info=True)
+            self.logger().error(f"[Manual] Error in custom_command: {e}", exc_info=True)
             return []
